@@ -12,5 +12,9 @@ Use the ASD-STE100 guide at `~/.claude/skills/asd-ste100/SKILL.md` when availabl
 - Match the black controls in `../uidesigneditor/editor/shadcn.css`.
 - Edit a separate page copy. Do not change source page elements.
 - Allow free movement. Keep the position of other items unchanged.
+- Keep each item free of its source parents. Keep the same layer order.
+- Move items together only when the user selects them together or makes a group.
+- Start each edit session from the current page. Save drafts only when storage is on.
+- Put text, background, and border colors first in the sidebar.
 - Use the bottom-right handle to scale the item and its contents.
 - Use side handles to resize the box.

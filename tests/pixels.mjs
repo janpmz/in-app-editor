@@ -24,12 +24,12 @@ function decode(encoded) {
   return { width, height, channels, pixels };
 }
 
-export function comparePNG(before, after) {
+export function comparePNG(before, after, tolerance = 0) {
   const a = decode(before), b = decode(after);
   if (a.width !== b.width || a.height !== b.height) throw new Error('Screenshot sizes differ');
   let changed = 0;
   for (let index = 0; index < a.width * a.height; index++) {
-    if ([0, 1, 2].some((channel) => a.pixels[index * a.channels + channel] !== b.pixels[index * b.channels + channel])) changed++;
+    if ([0, 1, 2].some((channel) => Math.abs(a.pixels[index * a.channels + channel] - b.pixels[index * b.channels + channel]) > tolerance)) changed++;
   }
   return { changed, total: a.width * a.height, ratio: changed / (a.width * a.height) };
 }

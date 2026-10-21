@@ -12,7 +12,11 @@ Open [localhost:4317](http://localhost:4317).
 2. Click an item.
 3. Drag the item to move it. Drag the bottom-right handle to scale it. Drag a side handle to resize it.
 
-Double-click text to type. The sidebar shows text, font size, weight, and colors first. Position and box size appear last. Use **Esc** to exit.
+Double-click text to type. The sidebar starts with text, background, and border colors. Text and font controls follow. Position and box size appear last.
+
+Hold **⌘/Ctrl** and scroll to zoom. Scroll to pan. Drag across empty space to select items. The rectangle only needs to touch them. Drag any selected item to move the whole selection.
+
+Right-click for **Group**, **Ungroup**, and **Delete**. Use **Shift + click** to add or remove items from the selection.
 
 ## Add to a site
 
@@ -31,15 +35,15 @@ mountEditor();
 
 Call `InAppEditor.destroy()` when the app removes the editor.
 
-Options: `open`, `persist`, `storageKey`, and `onChange(changes)`. Set `persist: false` to disable browser storage.
+Options: `open`, `persist`, `storageKey`, and `onChange(changes)`. Each edit session starts from the current page. Set `persist: true` to save and restore drafts. For a script tag, use `data-persist="true"`.
 
 ## Save
 
 **Copy changes** copies a prompt for Codex. Paste it into the website project to apply the edits to its files.
 
-**Export** saves a JSON file. Browser storage keeps drafts for each page path. Reset removes the current draft. Undo restores it.
+**Export** saves a JSON file. Reset removes the current edits. Undo restores them.
 
-The canvas captures the page when edit mode starts. Text, images, controls, and groups become items. Changing a group’s width does not move its children. The canvas does not run the page’s scripts. Exit edit mode to use the source page.
+The canvas copies the page when edit mode starts. Each item moves on its own. Moving a card leaves its text and buttons in place. Their order stays the same. Select them together or make a group to move them together. The copy does not run the page’s scripts. Exit edit mode to use the source page.
 
 The editor cannot copy content inside closed shadow roots or frames. Video, custom components, and complex transforms can differ in the copy.
 
@@ -47,12 +51,18 @@ The editor cannot copy content inside closed shadow roots or frames. Video, cust
 
 | Key | Action |
 | --- | --- |
-| Drag | Move |
+| Drag empty space | Select items |
+| Drag selected items | Move |
+| Shift + click | Add or remove items |
 | Shift + drag | Move along one axis |
+| ⌘/Ctrl + scroll | Zoom at the pointer |
+| Scroll | Pan |
+| Space + drag | Pan |
 | Arrow | Move 1 px |
 | Shift + arrow | Move 10 px |
-| Alt + click | Select a child |
-| Alt + up | Select the parent |
+| ⌘/Ctrl + G | Group |
+| ⌘/Ctrl + Shift + G | Ungroup |
+| Delete / Backspace | Delete selected items |
 | ⌘/Ctrl + Z | Undo |
 | ⌘/Ctrl + Shift + Z | Redo |
 | Esc | Finish text edits, cancel a drag, or exit |
