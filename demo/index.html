@@ -25,17 +25,18 @@
     .box { width: 180px; height: 100px; margin-top: 48px; border: 1px solid #3f3f46; border-radius: 6px; background: #18181b; display: grid; place-items: center; }
     .box svg { width: 32px; height: 32px; color: #a1a1aa; }
     @media(max-width:600px) { header { padding: 0 16px; } nav a { padding: 6px 8px; } main { padding: 40px 20px; } .page { padding: 28px; } h1 { font-size: 32px; } }
+    @media(max-width:600px) { header { height: auto; min-height: 64px; gap: 12px; flex-wrap: wrap; padding-block: 14px; } }
   </style>
 </head>
 <body>
   <header>
     <span class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m7 17 10-10M7 7h10v10"/></svg>In-App Editor</span>
-    <nav><a href="../PROMPT.md">Prompt</a><a href="https://github.com/janpmz/in-app-editor">GitHub</a></nav>
+    <nav><a href="./contrast.html">Light + dark</a><a href="../PROMPT.md">Prompt</a><a href="https://github.com/janpmz/in-app-editor">GitHub</a></nav>
   </header>
   <main>
     <section class="page" id="sample-page">
-      <h1 id="page-title">Page title</h1>
-      <p id="page-text">Page text.</p>
+      <h1 id="page-title">Your website</h1>
+      <p id="page-text">Edit your website in place</p>
       <div class="row"><button class="primary" id="sample-button">Button</button><a href="#page-title" id="sample-link">Link</a></div>
       <div class="box" id="sample-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25" aria-label="Square"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></div>
     </section>

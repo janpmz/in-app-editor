@@ -700,6 +700,33 @@ test('browser checks', { timeout: 60000 }, async (t) => {
     await run('editor.undo()'); assert.equal((await run('editor.getChanges()'))[0].added.icon,'star-outline');
     await run('editor.reset();localStorage.removeItem("added-draft")'); await sameSource();
   });
+  await t.test('fit beside Move with a hover label and the edit bar hidden', async () => {
+    await fresh(); await click('#headline');
+    const fit = '[data-selection-tools] [data-action="fit"]';
+    const before = await run('box(copy("#headline"))');
+    const move = await handle('[data-move-handle]'), point = await handle(fit);
+    assert.equal(point.x - move.x, 34); assert.equal(point.y, move.y);
+    await uiClick('[data-action="minimize"]');
+    await send('Input.dispatchMouseEvent', {type:'mouseMoved', ...point});
+    const tip = await run('(()=>{const el=document.querySelector("in-app-editor").shadowRoot.querySelector(' + JSON.stringify(fit) + '),css=getComputedStyle(el,"::after");return {text:css.content,visible:css.visibility}})()');
+    assert.equal(tip.text, '"Fit box to content"'); assert.equal(tip.visible, 'visible');
+    await drag(point, 0, 0); await run('new Promise(requestAnimationFrame)');
+    assert.ok((await run('box(copy("#headline"))')).width < before.width / 2);
+    await run('editor.undo()'); assert.deepEqual(await run('box(copy("#headline"))'), before);
+    await run('editor.setText("")');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector(' + JSON.stringify(fit) + ').hidden'), true);
+    await run('editor.undo()');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector(' + JSON.stringify(fit) + ').hidden'), false);
+    await sameSource();
+    await layout(); await run('editor.open()'); await click('#square');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector(' + JSON.stringify(fit) + ').hidden'), true);
+    await addToSelection('#row-label');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector(' + JSON.stringify(fit) + ').hidden'), false);
+    const square = await run('box(copy("#square"))');
+    await drag(await handle(fit), 0, 0); await run('new Promise(requestAnimationFrame)');
+    assert.deepEqual(await run('box(copy("#square"))'), square);
+    assert.deepEqual(await run('editor.getChanges().map(item=>item.selector)'), ['#row-label']);
+  });
   await t.test('fit a title box without moving its text or its neighbour', async () => {
     await fresh(); await click('#headline');
     const before = await run('box(copy("#headline"))'), neighbour = await run('box(copy("#copy"))');
