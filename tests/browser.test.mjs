@@ -571,6 +571,109 @@ test('browser checks', { timeout: 60000 }, async (t) => {
     await uiClick('[data-mode="select"]');
     assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("button[data-mode=select]").getAttribute("aria-pressed")'),'true');
   });
+  await t.test('choose modes from the page menu', async () => {
+    await fresh();
+    for (const mode of ['move','pan','select']) {
+      await context('#button');
+      await uiClick('[data-menu] button[data-mode="'+mode+'"]');
+      assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-menu]").hidden'),true);
+      assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector(\'[data-panel] button[data-mode="'+mode+'"]\').getAttribute("aria-pressed")'),'true');
+    }
+    await sameSource();
+  });
+  await t.test('add all eight item types from the left sidebar', async () => {
+    await fresh(); await uiClick('[data-add-toggle]');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-add-panel]").hidden'),false);
+    const panel = await run('box(document.querySelector("in-app-editor").shadowRoot.querySelector("[data-add-panel]"))');
+    assert.equal(panel.x,20);
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelectorAll("[data-add-catalog] [data-add] svg").length'),8);
+    for (const type of ['text','button','box','rectangle','arrow','textbox','divider']) await uiClick('[data-add="'+type+'"]');
+    await uiClick('[data-add="icon"]'); await uiValue('[data-icon-search]','heart outline','input');
+    await uiClick('[data-add-icon="heart-outline"]'); await run('document.fonts.ready');
+    const changes = await run('editor.getChanges()');
+    assert.deepEqual(changes.map(item=>item.added.type),['text','button','box','rectangle','arrow','textbox','divider','icon']);
+    assert.equal(changes.at(-1).added.icon,'heart-outline');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelectorAll("[data-text],[data-text-node]").length'),0);
+    assert.equal(await run('document.fonts.check("26px InAppEditorIcons")'),true);
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-page-copy]").shadowRoot.querySelectorAll("[data-edit-id]").length'),8);
+    assert.equal(await run('editor.addItem("constructor")'),false);
+    assert.equal(await run('editor.addItem("icon",{icon:"constructor"})'),false);
+    await sameSource();
+  });
+  await t.test('new items support text, style, move, undo, redo, and delete', async () => {
+    await fresh(); await run('window.newItem=editor.addItem("button");window.newKey=editor.getChanges()[0].selector;editor.setText("New button");editor.setStyle("background-color","#22cc88");editor.moveTo(120,180)');
+    let change = (await run('editor.getChanges()'))[0];
+    assert.equal(change.text.after,'New button'); assert.equal(change.frame.x,120);
+    assert.match(change.added.html,/New button/); assert.ok(!change.added.html.includes('data-iae-node'));
+    await run('editor.undo();editor.undo();editor.undo()');
+    assert.equal(await run('copy(newKey).textContent'),'Button');
+    await run('editor.undo()'); assert.equal(await run('Boolean(copy(newKey))'),false);
+    await run('editor.redo();editor.redo();editor.redo();editor.redo()');
+    assert.equal(await run('copy(newKey).textContent'),'New button');
+    assert.equal((await run('box(copy(newKey))')).x,120);
+    await run('editor.select(copy(newKey))'); await key('Delete');
+    assert.equal(await run('editor.getChanges().length'),0);
+    await run('editor.undo()'); assert.equal(await run('copy(newKey).textContent'),'New button');
+    await run('editor.reset()'); assert.equal(await run('Boolean(copy(newKey))'),false);
+    await sameSource();
+  });
+  await t.test('restore new items and icon choices from a saved draft', async () => {
+    await fresh('{persist:true,open:true,storageKey:"added-draft"}');
+    await run('editor.reset();editor.addItem("icon",{icon:"star-outline"});editor.moveTo(140,220);editor.addItem("text");editor.setText("Saved item")');
+    const keys = await run('editor.getChanges().map(item=>item.selector)');
+    await fresh('{persist:true,open:true,storageKey:"added-draft"}'); await run('document.fonts.ready');
+    assert.equal(await run('copy('+JSON.stringify(keys[1])+').textContent'),'Saved item');
+    assert.equal((await run('box(copy('+JSON.stringify(keys[0])+'))')).x,140);
+    assert.equal((await run('editor.getChanges()'))[0].added.icon,'star-outline');
+    await run('editor.select(copy('+JSON.stringify(keys[0])+'))'); await uiClick('[data-action="change-icon"]');
+    await uiValue('[data-icon-search]','heart outline','input'); await uiClick('[data-add-icon="heart-outline"]');
+    assert.equal((await run('editor.getChanges()'))[0].added.icon,'heart-outline');
+    await run('editor.undo()'); assert.equal((await run('editor.getChanges()'))[0].added.icon,'star-outline');
+    await run('editor.reset();localStorage.removeItem("added-draft")'); await sameSource();
+  });
+  await t.test('fit a title box without moving its text or its neighbour', async () => {
+    await fresh(); await click('#headline');
+    const before = await run('box(copy("#headline"))'), neighbour = await run('box(copy("#copy"))');
+    const ink = await run('(()=>{const range=document.createRange();range.selectNodeContents(copy("#headline"));return box({getBoundingClientRect:()=>range.getBoundingClientRect()})})()');
+    await context('#headline'); await action('fit'); await run('new Promise(requestAnimationFrame)');
+    const after = await run('box(copy("#headline"))');
+    const fittedInk = await run('(()=>{const range=document.createRange();range.selectNodeContents(copy("#headline"));return box({getBoundingClientRect:()=>range.getBoundingClientRect()})})()');
+    assert.ok(after.width<before.width/2); assert.ok(Math.abs(ink.x-fittedInk.x)<.1); assert.ok(Math.abs(ink.y-fittedInk.y)<.1);
+    assert.deepEqual(await run('box(copy("#copy"))'),neighbour);
+    await run('editor.undo()'); assert.deepEqual(await run('box(copy("#headline"))'),before); await sameSource();
+  });
+  await t.test('fit a scaled button and keep its label in place', async () => {
+    await fresh(); await run('editor.addItem("button");editor.setStyle("width","300px");editor.setStyle("height","100px")');
+    await uiValue('[data-frame="scale"]','1.5');
+    const key = (await run('editor.getChanges()'))[0].selector;
+    await run('window.fitButton=()=>{const range=document.createRange();range.selectNodeContents(copy('+JSON.stringify(key)+'));return box({getBoundingClientRect:()=>range.getBoundingClientRect()})}');
+    const before = await run('fitButton()'), size = await run('box(copy('+JSON.stringify(key)+'))');
+    await run('editor.fitToContent()');
+    const after = await run('fitButton()');
+    assert.ok((await run('box(copy('+JSON.stringify(key)+'))')).width<size.width/2);
+    for (const coordinate of ['x','y','width','height']) assert.ok(Math.abs(before[coordinate]-after[coordinate])<.1,coordinate);
+    await sameSource();
+  });
+  await t.test('fit wrapped text without changing its lines', async () => {
+    await layout(); await run('editor.open();editor.select(document.querySelector("#wrapped"));window.lines=()=>{const range=document.createRange();range.selectNodeContents(copy("#wrapped"));return Array.from(range.getClientRects()).map(r=>({x:r.x,y:r.y,width:r.width,height:r.height}))}');
+    const before = await run('lines()'), button = await run('box(copy("#nested-button"))');
+    await run('editor.fitToContent()'); const after = await run('lines()');
+    assert.equal(after.length,before.length);
+    for (let i=0;i<before.length;i++) for (const coordinate of ['x','y','width','height']) assert.ok(Math.abs(before[i][coordinate]-after[i][coordinate])<.1,coordinate);
+    assert.deepEqual(await run('box(copy("#nested-button"))'),button);
+  });
+  await t.test('keep the two sidebars apart and use a direction icon for the controls', async () => {
+    await fresh(); await click('#button');
+    const first = await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-action=move]").innerHTML');
+    await uiClick('[data-action="move"]');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-action=move]").getAttribute("aria-label")'),'Move controls right');
+    assert.notEqual(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-action=move]").innerHTML'),first);
+    await uiClick('[data-add-toggle]');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-panel]").classList.contains("left")'),false);
+    const add = await run('box(document.querySelector("in-app-editor").shadowRoot.querySelector("[data-add-panel]"))'), controls = await run('box(document.querySelector("in-app-editor").shadowRoot.querySelector("[data-panel]"))');
+    assert.ok(add.x+add.width<controls.x);
+    await sameSource();
+  });
   await t.test('remove the copy and leave source handlers intact', async () => {
     await fresh(); await run('editor.select(document.querySelector("#headline"));editor.setText("Copy");editor.destroy()');
     assert.equal(await run('document.querySelectorAll("in-app-editor").length'), 0); await sameSource();

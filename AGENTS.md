@@ -23,3 +23,6 @@ Use the ASD-STE100 guide at `~/.claude/skills/asd-ste100/SKILL.md` when availabl
 - Skip items that fully surround the selection box. Select them when the box crosses their edge.
 - Use the bottom-right handle to scale the item and its contents.
 - Use side handles to resize the box.
+- Keep the add tools in a separate left sidebar. Use the same tools and icons as the UI design editor.
+- Keep text in place when fitting its box to content.
+- Include new items in undo, redo, saved drafts, and exports.

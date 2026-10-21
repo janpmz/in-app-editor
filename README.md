@@ -22,6 +22,10 @@ Drag any selected text or control to move the whole selection. Use **Move** to d
 
 Right-click for **Group**, **Ungroup**, and **Delete**. Use **Shift + click** to add or remove items from the selection.
 
+The right-click menu also has **Select**, **Move**, **Pan**, and **Fit box to content**. Fit shrinks text and button boxes while keeping the text in place.
+
+Click **Add** beside the zoom controls to open the left sidebar. Add text, icons, buttons, boxes, rectangles, arrows, text boxes, or dividers. Search icons by name and choose a style.
+
 ## Add to a site
 
 Copy `in-app-editor.js` into the public folder. Load it once:
@@ -46,6 +50,8 @@ Options: `open`, `persist`, `storageKey`, `initialZoom`, and `onChange(changes)`
 **Copy changes** copies a prompt for Codex. Paste it into the website project to apply the edits to its files.
 
 **Export** saves a JSON file. **Reset** asks twice before it removes the edits and copies the current page again.
+
+New items appear in the saved changes with their type, HTML, and position. Undo, redo, groups, and delete also work on new items.
 
 The canvas copies the page when edit mode starts. Each item moves on its own. Moving a card leaves its text and buttons in place. Their order stays the same. Select them together or make a group to move them together. The copy does not run the page’s scripts. Exit edit mode to use the source page.
 
@@ -79,6 +85,9 @@ InAppEditor.select(document.querySelector('h1'));
 InAppEditor.moveTo(100, 200);
 InAppEditor.setText('Title');
 InAppEditor.setStyle('font-size', '48px');
+InAppEditor.addItem('button');
+InAppEditor.addItem('icon', { icon: 'heart-outline' });
+await InAppEditor.fitToContent();
 InAppEditor.getChanges();
 InAppEditor.exportChanges();
 InAppEditor.exportChanges('json');
@@ -101,3 +110,5 @@ npm test
 Tests need Chrome. Set `CHROME_PATH` if Chrome uses another path.
 
 [PROMPT.md](./PROMPT.md) contains the setup prompt. The **Publish demo** GitHub workflow publishes the demo when you start it.
+
+The editor includes the [Ionicons](https://github.com/ionic-team/ionicons) set from the UI design editor. Its license stays in `in-app-editor.js`.
