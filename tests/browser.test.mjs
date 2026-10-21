@@ -66,171 +66,203 @@ test('browser checks', { timeout: 60000 }, async (t) => {
       if (await run('document.readyState === "complete" && Boolean(window.InAppEditor)')) break;
       await sleep(20);
     }
-    await run('window.editor=InAppEditor;editor.mount(' + options + ')');
+    await run('window.editor=InAppEditor;window.sourceHTML=document.querySelector("#fixture").outerHTML;editor.mount(' + options + ');window.copy=(selector)=>[...document.querySelector("in-app-editor").shadowRoot.querySelector("[data-page-copy]").shadowRoot.querySelectorAll(selector)].find(el=>!el.closest("[data-iae-placeholder]"));window.box=(el)=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}');
   }
-  async function click(selector, count = 1) {
-    const point = await run(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  async function click(selector, count = 1, original = false) {
+    const point = await run(`(()=>{const r=${original ? "document.querySelector" : "copy"}(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
     await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: count });
     await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: count });
   }
 
-  await t.test('mount once and keep the controls apart from page styles', async () => {
+  async function drag(point, dx, dy) {
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x + dx, y: point.y + dy, button: 'left', buttons: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x + dx, y: point.y + dy, button: 'left', clickCount: 1 });
+  }
+  async function handle(selector) {
+    return run(`(()=>{const r=document.querySelector('in-app-editor').shadowRoot.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  }
+  async function sameSource() { assert.equal(await run('document.querySelector("#fixture").outerHTML'), await run('sourceHTML')); }
+
+  await t.test('show one instruction before selection', async () => {
     await fresh();
-    assert.equal(await run('editor.mount();document.querySelectorAll("in-app-editor").length'), 1);
-    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-panel]").hidden'), false);
-    assert.equal(await run('getComputedStyle(document.querySelector("#headline")).fontSize'), '32px');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector(".app").innerText.trim()'), 'Click anywhere to edit');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-panel]").hidden'), true);
+    await run('editor.mount()');
+    assert.equal(await run('document.querySelectorAll("in-app-editor").length'), 1);
+    await sameSource();
   });
-  await t.test('pick links and buttons without running their actions', async () => {
+  await t.test('copy the page and keep the position when selected', async () => {
     await fresh();
-    await click('#button');
-    assert.equal(await run('window.clicks||0'), 0);
-    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-element]").textContent'), 'button#button');
-    await click('#link');
-    assert.equal(await run('location.hash'), '');
-    await run('editor.close()');
-    await click('#button');
+    const source = await run('box(document.querySelector("#headline"))');
+    const before = await run('box(copy("#headline"))');
+    assert.deepEqual(before, source);
+    await click('#headline');
+    assert.deepEqual(await run('box(copy("#headline"))'), source);
+    await sameSource();
+  });
+  await t.test('drag freely without moving other items', async () => {
+    await fresh();
+    const before = await run('box(copy("#headline"))'), neighbour = await run('box(copy("#copy"))');
+    await drag({ x: before.x + 25, y: before.y + 15 }, 130, 170);
+    const after = await run('box(copy("#headline"))');
+    assert.equal(after.x, before.x + 130); assert.equal(after.y, before.y + 170);
+    assert.deepEqual(await run('box(copy("#copy"))'), neighbour);
+    assert.equal(await run('editor.getChanges().length'), 1);
+    await sameSource();
+    await run('editor.undo()'); assert.deepEqual(await run('box(copy("#headline"))'), before);
+    await run('editor.redo()'); assert.deepEqual(await run('box(copy("#headline"))'), after);
+  });
+  await t.test('scale the item and its text from the corner', async () => {
+    await fresh(); await click('#button');
+    const before = await run('box(copy("#button"))');
+    await drag(await handle('[data-scale]'), before.width, before.height);
+    const after = await run('box(copy("#button"))');
+    assert.ok(Math.abs(after.width - before.width * 2) < 1);
+    assert.ok(Math.abs(after.height - before.height * 2) < 1);
+    assert.equal(await run('editor.getChanges()[0].frame.scale'), 2);
+    await sameSource();
+    await run('editor.undo()'); assert.deepEqual(await run('box(copy("#button"))'), before);
+  });
+  await t.test('side handles change box size without scaling text', async () => {
+    await fresh(); await click('#button');
+    const font = await run('getComputedStyle(copy("#button")).fontSize');
+    await drag(await handle('[data-resize="e"]'), 80, 0);
+    assert.equal(await run('box(copy("#button")).width'), 200);
+    assert.equal(await run('box(copy("#button")).height'), 40);
+    assert.equal(await run('getComputedStyle(copy("#button")).fontSize'), font);
+    await run('editor.undo()'); assert.equal(await run('box(copy("#button")).width'), 120);
+    await sameSource();
+  });
+  await t.test('resize from the left and keep the right edge', async () => {
+    await fresh(); await click('#button');
+    const before = await run('box(copy("#button"))');
+    await drag(await handle('[data-resize="w"]'), -50, 0);
+    const after = await run('box(copy("#button"))');
+    assert.equal(after.width, before.width + 50); assert.equal(after.x, before.x - 50);
+    await sameSource();
+  });
+  await t.test('change text and font through the controls', async () => {
+    await fresh(); await click('#copy');
+    await run(`(()=>{const root=document.querySelector('in-app-editor').shadowRoot;const text=root.querySelector('[data-text]');text.value='New text';text.dispatchEvent(new Event('change',{bubbles:true}));const size=root.querySelector('[data-style="font-size"]');size.value='27';size.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    assert.equal(await run('copy("#copy").textContent'), 'New text');
+    assert.equal(await run('getComputedStyle(copy("#copy")).fontSize'), '27px');
+    await sameSource();
+  });
+  await t.test('double-click to type in the copy', async () => {
+    await fresh(); await click('#headline'); await click('#headline', 2);
+    assert.equal(await run('copy("#headline").getAttribute("contenteditable")'), 'plaintext-only');
+    await send('Input.insertText', { text: 'Typed text' });
+    await click('#copy');
+    assert.equal(await run('copy("#headline").textContent'), 'Typed text');
+    assert.equal(await run('copy("#headline").hasAttribute("contenteditable")'), false);
+    await run('editor.undo()'); assert.equal(await run('copy("#headline").textContent'), 'Hello world');
+    await sameSource();
+  });
+  await t.test('keep child items and treat new words as text', async () => {
+    await fresh();
+    assert.equal(await run('editor.select(document.querySelector("#mixed"));editor.setText("Remove children")'), false);
+    await run('editor.setTextNode(0,"Read ")');
+    assert.equal(await run('copy("#mixed").textContent'), 'Read these words intact.');
+    assert.equal(await run('copy("#bold").textContent'), 'these words');
+    await run('editor.select(document.querySelector("#copy"));editor.setText("<img src=x onerror=alert(1)>")');
+    assert.equal(await run('copy("#copy").children.length'), 0);
+    await sameSource();
+  });
+  await t.test('reset and undo restore styles and positions', async () => {
+    await fresh(); const before = await run('box(copy("#button"))');
+    await run('editor.select(document.querySelector("#button"));editor.setStyle("width","200px");editor.moveTo(70,400);editor.reset()');
+    assert.deepEqual(await run('box(copy("#button"))'), before);
+    await run('editor.undo()'); assert.equal(await run('box(copy("#button")).width'), 200);
+    assert.equal(await run('editor.getChanges()[0].frame.y'), 400);
+    await sameSource();
+  });
+  await t.test('edit a link without following it or running page actions', async () => {
+    await fresh(); await click('#button'); await click('#link');
+    assert.equal(await run('window.clicks||0'), 0); assert.equal(await run('location.hash'), '');
+    await run('editor.close()'); await click('#button', 1, true);
     assert.equal(await run('window.clicks'), 1);
   });
-  await t.test('change text and size through the fields', async () => {
+  await t.test('keep the source page live while the copy stays fixed', async () => {
     await fresh();
-    await click('#copy');
-    await run(`(()=>{const root=document.querySelector('in-app-editor').shadowRoot;const text=root.querySelector('[data-text]');text.value='New words';text.dispatchEvent(new Event('change',{bubbles:true}));const size=root.querySelector('[data-style="font-size"]');size.value='27';size.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-    assert.equal(await run('document.querySelector("#copy").textContent'), 'New words');
-    assert.equal(await run('getComputedStyle(document.querySelector("#copy")).fontSize'), '27px');
-    assert.equal(await run('editor.getChanges().length'), 1);
+    await run('editor.select(document.querySelector("#headline"));editor.setText("Copy text");document.querySelector("#headline").textContent="App text"');
+    await sleep(120);
+    assert.equal(await run('copy("#headline").textContent'), 'Copy text');
+    assert.equal(await run('document.querySelector("#headline").textContent'), 'App text');
+    await run('editor.close()'); assert.equal(await run('document.querySelector("#headline").textContent'), 'App text');
   });
-  await t.test('double-click to type, finish on blur, and undo', async () => {
-    await fresh();
-    await click('#headline', 2);
-    assert.equal(await run('document.querySelector("#headline").getAttribute("contenteditable")'), 'plaintext-only');
-    await send('Input.insertText', { text: 'Typed right here' });
-    await click('#copy');
-    assert.equal(await run('document.querySelector("#headline").textContent'), 'Typed right here');
-    assert.equal(await run('document.querySelector("#headline").hasAttribute("contenteditable")'), false);
-    await run('editor.undo()');
-    assert.equal(await run('document.querySelector("#headline").textContent'), 'Hello world');
+  await t.test('restore a saved draft only in the copy', async () => {
+    await fresh('{open:true,storageKey:"test-copy"}');
+    await run('editor.reset();editor.select(document.querySelector("#headline"));editor.setText("Saved text");editor.moveTo(100,200);editor.close()');
+    await sameSource();
+    await fresh('{open:true,storageKey:"test-copy"}');
+    assert.equal(await run('copy("#headline").textContent'), 'Saved text');
+    assert.equal(await run('editor.getChanges()[0].frame.x'), 100);
+    await sameSource(); await run('editor.reset();localStorage.removeItem("test-copy")');
   });
-  await t.test('keep child elements and treat new words as plain text', async () => {
-    await fresh();
-    assert.equal(await run('editor.select(document.querySelector("#mixed"));editor.setText("erase children")'), false);
-    assert.equal(await run('Boolean(document.querySelector("#bold"))'), true);
-    await run('editor.select(document.querySelector("#copy"));editor.setText("<img src=x onerror=alert(1)>")');
-    assert.equal(await run('document.querySelector("#copy").children.length'), 0);
-    assert.equal(await run('document.querySelector("#copy").textContent'), '<img src=x onerror=alert(1)>');
+  await t.test('export the text, styles, page position and scale', async () => {
+    await fresh(); await run('editor.select(document.querySelector("#headline"));editor.setText("Title");editor.setStyle("font-size","48px");editor.moveTo(100,200)');
+    const data = JSON.parse(await run('editor.exportChanges("json")'));
+    assert.equal(data.version, 2); assert.equal(data.changes[0].frame.x, 100); assert.equal(data.changes[0].frame.y, 200);
+    assert.equal(data.changes[0].text.before, 'Hello world'); assert.equal(data.changes[0].styles['font-size'], '48px');
+    assert.match(await run('editor.exportChanges()'), /separate page copy/); await sameSource();
   });
-  await t.test('undo, redo, and reset preserve old inline styles', async () => {
-    await fresh();
-    await run('editor.select(document.querySelector("#button"));editor.setStyle("width","200px");editor.setStyle("height","60px");editor.undo()');
-    assert.equal(await run('document.querySelector("#button").style.height'), '40px');
-    await run('editor.redo()');
-    assert.equal(await run('document.querySelector("#button").style.height'), '60px');
-    await run('editor.reset()');
-    assert.equal(await run('document.querySelector("#button").style.width'), '120px');
-    assert.equal(await run('editor.getChanges().length'), 0);
-    await run('editor.undo()');
-    assert.equal(await run('document.querySelector("#button").style.width'), '200px');
-  });
-  await t.test('edit words around a child item without removing it', async () => {
-    await fresh();
-    await click('#mixed');
-    await run(`(()=>{const input=document.querySelector('in-app-editor').shadowRoot.querySelector('[data-text-node="0"]');input.value='Read ';input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-    assert.equal(await run('document.querySelector("#mixed").textContent'), 'Read these words intact.');
-    assert.equal(await run('document.querySelector("#bold").textContent'), 'these words');
-    assert.equal(await run('editor.getChanges()[0].textNodes[0].before'), 'Keep ');
-    await run('editor.undo()');
-    assert.equal(await run('document.querySelector("#mixed").textContent'), 'Keep these words intact.');
-  });
-  await t.test('replay overlapping styles in order and restore the old style', async () => {
-    await fresh();
-    await run('editor.select(document.querySelector("#container"));editor.setStyle("padding","30px");editor.setStyle("padding-top","40px");editor.setStyle("padding","50px");window.overlapWrites=0;window.overlapWatch=new MutationObserver(e=>{window.overlapWrites+=e.length});window.overlapWatch.observe(document.querySelector("#container"),{attributes:true})');
-    await sleep(300);
-    assert.equal(await run('getComputedStyle(document.querySelector("#container")).paddingTop'), '50px');
-    assert.ok(await run('overlapWrites<3'));
-    await run('overlapWatch.disconnect();editor.undo()');
-    assert.equal(await run('getComputedStyle(document.querySelector("#container")).paddingTop'), '40px');
-    await run('editor.reset()');
-    assert.equal(await run('document.querySelector("#container").getAttribute("style")'), 'padding:20px');
-  });
-  await t.test('drag a handle to resize and undo it in one step', async () => {
-    await fresh();
-    await click('#button');
-    const point = await run(`(()=>{const r=document.querySelector('in-app-editor').shadowRoot.querySelector('[data-resize="se"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
-    await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
-    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x + 80, y: point.y + 30, button: 'left', buttons: 1 });
-    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x + 80, y: point.y + 30, button: 'left', clickCount: 1 });
-    assert.equal(await run('document.querySelector("#button").style.width'), '200px');
-    assert.equal(await run('document.querySelector("#button").style.height'), '70px');
-    await run('editor.undo()');
-    assert.equal(await run('document.querySelector("#button").style.width'), '120px');
-    assert.equal(await run('document.querySelector("#button").style.height'), '40px');
-  });
-  await t.test('size inline text and reject bad style values', async () => {
-    await fresh();
-    await run('editor.select(document.querySelector("#inline"));editor.setStyle("width","200px")');
-    assert.equal(await run('getComputedStyle(document.querySelector("#inline")).display'), 'inline-block');
-    assert.equal(await run('editor.setStyle("font-size","bananas")'), false);
-    await run('editor.undo()');
-    assert.equal(await run('getComputedStyle(document.querySelector("#inline")).display'), 'inline');
-  });
-  await t.test('save changes and restore them after a reload', async () => {
-    await fresh('{open:true,storageKey:"test-draft"}');
-    await run('editor.reset();editor.select(document.querySelector("#headline"));editor.setText("Stored words");editor.setStyle("color","#123456")');
-    await fresh('{open:true,storageKey:"test-draft"}');
-    assert.equal(await run('document.querySelector("#headline").textContent'), 'Stored words');
-    assert.equal(await run('getComputedStyle(document.querySelector("#headline")).color'), 'rgb(18, 52, 86)');
-    await run('editor.reset();localStorage.removeItem("test-draft")');
-  });
-  await t.test('keep changes if an app replaces an item, without a style loop', async () => {
-    await fresh();
-    await run('editor.select(document.querySelector("#headline"));editor.setText("Stay here");editor.setStyle("color","#123456");document.querySelector("#headline").outerHTML="<h1 id=headline>App redraw</h1>";window.styleWrites=0;window.watch=new MutationObserver(e=>{window.styleWrites+=e.length});window.watch.observe(document.querySelector("#headline"),{attributes:true})');
-    await sleep(350);
-    assert.equal(await run('document.querySelector("#headline").textContent'), 'Stay here');
-    assert.equal(await run('getComputedStyle(document.querySelector("#headline")).color'), 'rgb(18, 52, 86)');
-    assert.ok(await run('window.styleWrites < 4'));
-    await run('watch.disconnect()');
-  });
-  await t.test('export a useful prompt, JSON and CSS', async () => {
-    await fresh();
-    await run('editor.select(document.querySelector("#headline"));editor.setText("New headline");editor.setStyle("font-size","64px")');
-    const exported = JSON.parse(await run('editor.exportChanges("json")'));
-    assert.equal(exported.changes[0].text.before, 'Hello world');
-    assert.equal(exported.changes[0].text.after, 'New headline');
-    assert.equal(exported.changes[0].styles['font-size'], '64px');
-    assert.match(await run('editor.exportChanges()'), /Apply these edits to the website source files/);
-    assert.match(await run('editor.exportChanges("css")'), /font-size: 64px !important/);
-  });
-  await t.test('edit images and links, and reject script addresses', async () => {
-    await fresh();
-    await run('editor.select(document.querySelector("#image"));editor.setAttribute("alt","A new description");editor.setAttribute("src","/picture.png")');
-    assert.equal(await run('document.querySelector("#image").getAttribute("alt")'), 'A new description');
+  await t.test('edit image and link values in the copy', async () => {
+    await fresh(); await run('editor.select(document.querySelector("#image"));editor.setAttribute("alt","Image");editor.setAttribute("src","/picture.png")');
+    assert.equal(await run('copy("#image").getAttribute("alt")'), 'Image');
     assert.equal(await run('editor.setAttribute("src","javascript:alert(1)")'), false);
     assert.equal(await run('editor.setAttribute("onclick","alert(1)")'), false);
-    await run('editor.select(document.querySelector("#link"));editor.setAttribute("href","/new-page")');
-    assert.equal(await run('document.querySelector("#link").getAttribute("href")'), '/new-page');
+    await run('editor.select(document.querySelector("#link"));editor.setAttribute("href","/page")');
+    assert.equal(await run('copy("#link").getAttribute("href")'), '/page'); await sameSource();
   });
-  await t.test('pick the correct item when there is no ID', async () => {
-    await fresh();
-    await run('editor.select(document.querySelectorAll(".same")[1]);editor.setText("Only the second")');
-    assert.equal(await run('document.querySelectorAll(".same")[0].textContent'), 'First');
+  await t.test('move a parent with a child that already moved', async () => {
+    await fresh(); await run('editor.select(document.querySelector("#inline"));editor.moveTo(100,300);editor.select(document.querySelector("#container"))');
+    const parent = await run('box(copy("#container"))'), child = await run('box(copy("#inline"))');
+    await drag({ x: parent.x + 10, y: parent.y + 10 }, 40, 60);
+    const after = await run('box(copy("#inline"))');
+    assert.equal(after.x, child.x + 40); assert.equal(after.y, child.y + 60); await sameSource();
+  });
+  await t.test('reject bad style values and keep repeated items separate', async () => {
+    await fresh(); await run('editor.select(document.querySelectorAll(".same")[1]);editor.setText("Second text")');
+    assert.equal(await run('copy(".same").textContent'), 'First');
     assert.match(await run('editor.getChanges()[0].selector'), /nth-of-type\(2\)/);
+    assert.equal(await run('editor.setStyle("font-size","bad")'), false); await sameSource();
   });
-  await t.test('block forms only in edit mode and remove handlers on destroy', async () => {
-    await fresh();
-    await run('document.querySelector("#form").requestSubmit()');
-    assert.equal(await run('window.submits||0'), 0);
-    await run('editor.close();document.querySelector("#form").requestSubmit()');
-    assert.equal(await run('window.submits'), 1);
-    await run('editor.open();editor.select(document.querySelector("#headline"));editor.setText("Draft");editor.destroy({revert:true})');
-    assert.equal(await run('document.querySelectorAll("in-app-editor").length'), 0);
-    assert.equal(await run('document.querySelector("#headline").textContent'), 'Hello world');
-    await click('#button');
-    assert.equal(await run('window.clicks'), 1);
+  await t.test('keep fonts on detached items and inherit text edits', async () => {
+    await fresh(); const font = await run('getComputedStyle(copy("#mixed")).fontFamily');
+    await click('#mixed');
+    assert.equal(await run('getComputedStyle(copy("#mixed")).fontFamily'), font);
+    await run('editor.setStyle("font-size","30px");editor.select(document.querySelector("#bold"));editor.setText("Bold text");editor.reset()');
+    assert.equal(await run('getComputedStyle(copy("#bold")).fontSize'), '16px');
+    await run('editor.undo()');
+    assert.equal(await run('getComputedStyle(copy("#bold")).fontSize'), '30px');
+    assert.equal(await run('copy("#bold").textContent'), 'Bold text');
+    await sameSource();
   });
-  await t.test('fit the controls on a phone', async () => {
+  await t.test('move outside a clipped parent', async () => {
     await fresh();
-    await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-    const box = await run(`(()=>{const r=document.querySelector('in-app-editor').shadowRoot.querySelector('[data-panel]').getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}})()`);
-    assert.ok(box.left >= 0 && box.right <= 390 && box.top >= 0 && box.bottom <= 844);
+    await run('editor.select(document.querySelector("#clipped-title"));editor.moveTo(300,100)');
+    const rect = await run('box(copy("#clipped-title"))');
+    assert.equal(rect.x, 300); assert.equal(rect.y, 100);
+    assert.equal(await run('copy("#clipped-title").closest("#clip")'), null);
+    await sameSource();
+  });
+  await t.test('undo uses the captured copy after the app changes', async () => {
+    await fresh(); await run('editor.select(document.querySelector("#headline"));editor.setText("Draft");document.querySelector("#headline").outerHTML="<h1 id=headline>App text</h1>";editor.undo()');
+    assert.equal(await run('copy("#headline").textContent'), 'Hello world');
+    assert.equal(await run('document.querySelector("#headline").textContent'), 'App text');
+    await run('editor.redo()'); assert.equal(await run('copy("#headline").textContent'), 'Draft');
+  });
+  await t.test('fit the selected controls on a phone', async () => {
+    await fresh(); await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await run('editor.select(document.querySelector("#headline"))');
+    const rect = await run('box(document.querySelector("in-app-editor").shadowRoot.querySelector("[data-panel]"))');
+    assert.ok(rect.x >= 0 && rect.x + rect.width <= 390 && rect.y >= 0 && rect.y + rect.height <= 844);
     await send('Emulation.clearDeviceMetricsOverride');
+  });
+  await t.test('remove the copy and leave source handlers intact', async () => {
+    await fresh(); await run('editor.select(document.querySelector("#headline"));editor.setText("Copy");editor.destroy()');
+    assert.equal(await run('document.querySelectorAll("in-app-editor").length'), 0); await sameSource();
+    await click('#button', 1, true); assert.equal(await run('window.clicks'), 1);
   });
 });

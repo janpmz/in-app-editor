@@ -1,12 +1,27 @@
 {
   "name": "@janpmz/in-app-editor",
-  "version": "0.1.0",
-  "description": "Drop a small visual editor into an existing website.",
+  "version": "0.2.0",
+  "description": "Edit a copy of a website.",
   "type": "module",
   "main": "index.js",
-  "exports": { ".": "./index.js", "./standalone": "./in-app-editor.js" },
-  "files": ["index.js", "in-app-editor.js", "README.md", "PROMPT.md", "LICENSE"],
-  "scripts": { "start": "node server.mjs", "test": "node --test tests/browser.test.mjs", "check": "node --check in-app-editor.js && node --check index.js && node --check server.mjs" },
-  "engines": { "node": ">=20" },
+  "exports": {
+    ".": "./index.js",
+    "./standalone": "./in-app-editor.js"
+  },
+  "files": [
+    "index.js",
+    "in-app-editor.js",
+    "README.md",
+    "PROMPT.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests/browser.test.mjs",
+    "check": "node --check in-app-editor.js && node --check index.js && node --check server.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "license": "MIT"
 }

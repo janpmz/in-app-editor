@@ -3,108 +3,43 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f5f4ed">
-  <title>In-App Editor — make it yours</title>
+  <meta name="theme-color" content="#09090b">
+  <title>In-App Editor</title>
   <style>
     * { box-sizing: border-box; }
-    :root { color: #272e25; background: #f5f4ed; font-family: Arial, Helvetica, sans-serif; }
+    :root { color-scheme: dark; color: #fafafa; background: #09090b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
     body { margin: 0; }
-    a { color: inherit; text-decoration: none; }
-    button { font: inherit; cursor: pointer; }
-    .shell { max-width: 1360px; padding: 0 64px; margin: auto; }
-    header { display: flex; justify-content: space-between; align-items: center; padding: 28px 0; border-bottom: 1px solid #d8dbce; }
-    .logo { font-weight: 750; font-size: 17px; letter-spacing: -.8px; display: flex; align-items: center; gap: 10px; }
-    .mark { width: 22px; height: 22px; border: 1.5px solid #272e25; display: grid; place-content: center; font-size: 20px; line-height: 1; border-radius: 4px; transform: rotate(-8deg); }
-    nav { display: flex; align-items: center; gap: 28px; font-size: 12px; color: #73796b; }
-    nav a:hover { color: #272e25; }
-    .badge { background: #e5e9dc; border-radius: 99px; padding: 6px 11px; font: 10px ui-monospace, monospace; color: #657353; }
-    .hero { padding: 81px 0 72px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 90px; align-items: center; }
-    .eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 2.2px; color: #737f60; text-transform: uppercase; display: flex; align-items: center; gap: 9px; }
-    .dot { width: 6px; height: 6px; border-radius: 50%; background: #889d58; }
-    h1 { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; font-size: clamp(58px, 6.4vw, 87px); letter-spacing: -5px; line-height: 1.02; margin: 25px 0 25px; }
-    h1 em { font-weight: 400; color: #849668; }
-    .intro { font-size: 15px; line-height: 1.8; color: #737a6d; max-width: 355px; margin: 0 0 30px; }
-    .actions { display: flex; gap: 12px; align-items: center; }
-    .primary { padding: 14px 22px; background: #2b3525; color: #f7f9ee; border: 1px solid #2b3525; border-radius: 8px; font-size: 12px; font-weight: 600; }
-    .secondary { padding: 14px 18px; border: 1px solid #cfd6c3; border-radius: 8px; font-size: 12px; background: transparent; }
-    .small-note { display: block; font-size: 10px; color: #8c9380; margin-top: 17px; }
-    .scene { background: #e6e9dc; border: 1px solid #dce1d0; border-radius: 16px; min-height: 400px; padding: 28px; position: relative; display: flex; align-items: center; justify-content: center; }
-    .scene-note { position: absolute; top: 22px; left: 24px; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: #8a947c; }
-    .sample-card { width: 288px; background: #fbfcf7; border: 1px solid #d7decb; border-radius: 12px; padding: 21px; box-shadow: 0 18px 35px #58684212; transform: rotate(-3deg); }
-    .art { height: 137px; border-radius: 7px; background: #d4dec2; overflow: hidden; position: relative; display: grid; place-items: center; }
-    .art::before { content: ''; width: 105px; height: 105px; border: 1px solid #8da275; border-radius: 50%; position: absolute; }
-    .sculpture { width: 88px; height: 88px; position: relative; background: #8b9d70; border-radius: 48% 48% 8% 8%; transform: rotate(18deg); box-shadow: inset -18px 0 0 #70855a; }
-    .sculpture::after { content: ''; position: absolute; width: 30px; height: 30px; border-radius: 50%; left: 29px; top: 28px; background: #d4dec2; box-shadow: inset 6px 0 0 #bdd09d; }
-    .card-label { font-size: 8px; text-transform: uppercase; letter-spacing: 1.6px; color: #8c977c; margin: 20px 0 8px; }
-    .sample-card h2 { font: 28px Georgia, serif; font-weight: 400; letter-spacing: -1px; margin: 0 0 9px; }
-    .sample-card p { font-size: 10px; line-height: 1.7; color: #8b927f; margin: 0 0 17px; }
-    .sample-card button { padding: 11px 15px; width: 100%; border: 1px solid #c6d1b5; border-radius: 5px; font-size: 10px; color: #596846; background: #e8eddc; }
-    .callout { position: absolute; right: -12px; bottom: 48px; padding: 10px 14px; background: #e2ff70; border: 1px solid #c4d98d; border-radius: 6px; font-size: 11px; transform: rotate(4deg); box-shadow: 0 5px 12px #5c6e2812; }
-    .callout span { margin-right: 8px; }
-    .divider { border-top: 1px solid #d8dbce; display: flex; justify-content: space-between; padding-top: 20px; font-size: 9px; color: #8a927e; letter-spacing: 1.2px; text-transform: uppercase; }
-    .playground { padding: 38px 0 63px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-    .tile { background: #eceee3; border: 1px solid #dde2d2; border-radius: 10px; padding: 22px; min-height: 172px; }
-    .tile:nth-child(2) { background: #e9e9df; }
-    .tile:nth-child(3) { background: #eee8dc; }
-    .tile .number { font: 10px ui-monospace, monospace; color: #929b83; }
-    .tile h3 { font: 23px Georgia, serif; font-weight: 400; letter-spacing: -.6px; margin: 21px 0 9px; }
-    .tile p { font-size: 11px; line-height: 1.7; color: #868e7a; margin: 0; max-width: 250px; }
-    .how { padding: 33px 0; border-top: 1px solid #d8dbce; display: grid; grid-template-columns: .8fr 1.3fr; gap: 60px; }
-    .how h2 { font: 29px Georgia, serif; font-weight: 400; letter-spacing: -1px; margin: 0 0 13px; }
-    .how p { font-size: 12px; line-height: 1.8; color: #858d79; margin: 0; max-width: 310px; }
-    pre { margin: 0; padding: 19px 21px; background: #e9ecdf; border: 1px solid #dce2cf; border-radius: 8px; overflow-x: auto; color: #657650; font: 11px/1.9 ui-monospace, monospace; white-space: pre-wrap; word-break: break-word; }
-    .code-label { font: 9px Arial, sans-serif; letter-spacing: 1px; text-transform: uppercase; color: #8d997d; margin-bottom: 11px; }
-    footer { border-top: 1px solid #d8dbce; margin-top: 15px; padding: 23px 0 30px; display: flex; justify-content: space-between; color: #969d8b; font-size: 10px; }
-    footer a { text-decoration: underline; text-underline-offset: 3px; }
-    @media (max-width: 1000px) { .shell { padding: 0 32px; } .hero { gap: 35px; } h1 { font-size: 69px; } .scene { padding: 30px 15px; } }
-    @media (max-width: 700px) { .shell { padding: 0 22px; } header { padding: 22px 0; } nav a { display: none; } .hero { padding: 48px 0 40px; grid-template-columns: 1fr; gap: 35px; } h1 { font-size: 65px; letter-spacing: -3.5px; } .scene { min-height: 375px; } .callout { right: 4px; } .playground { grid-template-columns: 1fr; padding: 25px 0 35px; gap: 12px; } .tile { min-height: 150px; } .how { grid-template-columns: 1fr; gap: 24px; } .divider span:last-child { display: none; } footer { padding-bottom: 90px; } }
+    header { height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid #27272a; background: #111113; }
+    .brand { display: flex; gap: 10px; align-items: center; font-size: 14px; font-weight: 600; }
+    .brand svg { padding: 4px; width: 24px; height: 24px; color: #18181b; background: #fafafa; border-radius: 6px; }
+    nav { display: flex; gap: 8px; }
+    a, button { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; padding: 6px 12px; border: 1px solid #3f3f46; border-radius: 6px; color: #fafafa; background: transparent; text-decoration: none; font: 500 12px/20px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; cursor: pointer; }
+    a:hover, button:hover { background: #27272a; }
+    main { min-height: calc(100dvh - 64px); padding: 80px max(24px, calc((100vw - 1000px) / 2)); background-image: radial-gradient(#27272a .7px, transparent .7px); background-size: 24px 24px; }
+    .page { width: min(100%, 760px); min-height: 430px; padding: 48px; background: #111113; border: 1px solid #27272a; border-radius: 8px; }
+    h1 { margin: 0 0 16px; font-size: 40px; line-height: 1.2; font-weight: 600; letter-spacing: -1px; }
+    p { margin: 0 0 28px; color: #a1a1aa; font-size: 15px; line-height: 24px; }
+    .row { display: flex; gap: 10px; align-items: center; }
+    .primary { color: #18181b; border-color: #fafafa; background: #fafafa; }
+    .primary:hover { background: #d4d4d8; }
+    .box { width: 180px; height: 100px; margin-top: 48px; border: 1px solid #3f3f46; border-radius: 6px; background: #18181b; display: grid; place-items: center; }
+    .box svg { width: 32px; height: 32px; color: #a1a1aa; }
+    @media(max-width:600px) { header { padding: 0 16px; } nav a { padding: 6px 8px; } main { padding: 40px 20px; } .page { padding: 28px; } h1 { font-size: 32px; } }
   </style>
 </head>
 <body>
-  <div class="shell">
-    <header>
-      <a class="logo" href="./" aria-label="In-App Editor home"><span class="mark">↗</span> in-app editor</a>
-      <nav><a href="#how">How it works</a><a href="https://github.com/janpmz/in-app-editor">GitHub ↗</a><span class="badge">a small experiment · v0.1</span></nav>
-    </header>
-    <main>
-      <section class="hero">
-        <div>
-          <div class="eyebrow"><span class="dot"></span> The whole page is yours</div>
-          <h1 id="hero-title">Looks good.<br>Make it <em>yours.</em></h1>
-          <p class="intro" id="intro">That button could be bigger. That headline, a little softer. Click EDIT and change what you see.</p>
-          <div class="actions"><button id="try-editor" class="primary">Try it on this page ↗</button><a class="secondary" href="../PROMPT.md">Get the prompt</a></div>
-          <span class="small-note">One file. No setup. Just your site, with an EDIT button.</span>
-        </div>
-        <div class="scene" id="sample-scene">
-          <span class="scene-note">A little something to play with</span>
-          <article class="sample-card" id="sample-card">
-            <div class="art" id="card-art" role="img" aria-label="A green round shape"><div class="sculpture"></div></div>
-            <div class="card-label">Small objects, good days</div>
-            <h2 id="card-title">Room to play.</h2>
-            <p id="card-description">A quiet little corner of the internet.<br>Go ahead. Change a thing or two.</p>
-            <button id="sample-button" onclick="this.textContent='You clicked it. Nice.'">A perfectly fine button ↗</button>
-          </article>
-          <div class="callout"><span>↖</span> even this little note</div>
-        </div>
-      </section>
-      <div class="divider"><span>Nothing here is off limits</span><span>Click EDIT, then pick a thing ↓</span></div>
-      <section class="playground">
-        <article class="tile" id="text-tile"><span class="number">01 / WORDS</span><h3 id="text-tile-title">Say it your way.</h3><p>Click a line. Change its font, size or color. Double-click to type new words.</p></article>
-        <article class="tile" id="size-tile"><span class="number">02 / SPACE</span><h3>Give it some room.</h3><p>Drag a handle to resize. Add space inside a box, or between the things in it.</p></article>
-        <article class="tile" id="style-tile"><span class="number">03 / STYLE</span><h3>A different kind of nice.</h3><p>Try a new fill. Round those corners. Pick the parent box to change a whole section.</p></article>
-      </section>
-      <section class="how" id="how">
-        <div><h2>Bring it to your site.</h2><p>Ask Codex to copy the editor file into your project and load it. Make your changes, then copy them back to Codex to save in your files.</p></div>
-        <pre><div class="code-label">The whole setup</div>&lt;script src="/in-app-editor.js" defer&gt;&lt;/script&gt;
-
-<span style="color:#98a387">// Or import it in your app:</span>
-import { mountEditor } from './in-app-editor/index.js';
-mountEditor();</pre>
-      </section>
-    </main>
-    <footer><span>A small tool for the “what if I just…” moments.</span><a href="../README.md">Read the guide ↗</a></footer>
-  </div>
+  <header>
+    <span class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m7 17 10-10M7 7h10v10"/></svg>In-App Editor</span>
+    <nav><a href="../PROMPT.md">Prompt</a><a href="https://github.com/janpmz/in-app-editor">GitHub</a></nav>
+  </header>
+  <main>
+    <section class="page" id="sample-page">
+      <h1 id="page-title">Page title</h1>
+      <p id="page-text">Page text.</p>
+      <div class="row"><button class="primary" id="sample-button">Button</button><a href="#page-title" id="sample-link">Link</a></div>
+      <div class="box" id="sample-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25" aria-label="Square"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></div>
+    </section>
+  </main>
   <script src="../in-app-editor.js" defer></script>
-  <script>document.querySelector('#try-editor').addEventListener('click', () => { InAppEditor.open(); });</script>
 </body>
 </html>
