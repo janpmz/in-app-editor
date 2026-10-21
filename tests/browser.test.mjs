@@ -67,7 +67,7 @@ test('browser checks', { timeout: 60000 }, async (t) => {
       if (await run('document.readyState === "complete" && Boolean(window.InAppEditor)')) break;
       await sleep(20);
     }
-    await run('window.editor=InAppEditor;window.sourceHTML=document.querySelector("#fixture").outerHTML;editor.mount(' + options + ');window.copy=(selector)=>[...document.querySelector("in-app-editor").shadowRoot.querySelector("[data-page-copy]").shadowRoot.querySelectorAll(selector)].find(el=>!el.closest("[data-iae-placeholder]"));window.box=(el)=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}');
+    await run('window.editor=InAppEditor;window.sourceHTML=document.querySelector("#fixture").outerHTML;editor.mount({initialZoom:1,...' + options + '});window.copy=(selector)=>[...document.querySelector("in-app-editor").shadowRoot.querySelector("[data-page-copy]").shadowRoot.querySelectorAll(selector)].find(el=>!el.closest("[data-iae-placeholder]"));window.box=(el)=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}');
   }
   async function click(selector, count = 1, original = false) {
     const point = await run(`(()=>{const r=${original ? "document.querySelector" : "copy"}(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
@@ -103,10 +103,16 @@ test('browser checks', { timeout: 60000 }, async (t) => {
     await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1, modifiers: 8 });
   }
   async function sameSource() { assert.equal(await run('document.querySelector("#fixture").outerHTML'), await run('sourceHTML')); }
+  async function uiClick(selector) {
+    await run('document.querySelector("in-app-editor").shadowRoot.querySelector(' + JSON.stringify(selector) + ').click()');
+  }
+  async function uiValue(selector, value, type = 'change') {
+    await run(`(()=>{const input=document.querySelector('in-app-editor').shadowRoot.querySelector(${JSON.stringify(selector)});input.value=${JSON.stringify(String(value))};input.dispatchEvent(new Event(${JSON.stringify(type)},{bubbles:true}));})()`);
+  }
   async function layout() {
     await send('Page.navigate', { url: base + '/tests/layout.html' });
     for (let n=0;n<100;n++) { if (await run('document.readyState === "complete" && Boolean(window.InAppEditor)')) break; await sleep(20); }
-    await run('window.editor=InAppEditor;editor.mount({persist:false});window.copy=(selector)=>document.querySelector("in-app-editor").shadowRoot.querySelector("[data-page-copy]").shadowRoot.querySelector(selector);window.box=(el)=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}');
+    await run('window.editor=InAppEditor;editor.mount({persist:false,initialZoom:1});window.copy=(selector)=>document.querySelector("in-app-editor").shadowRoot.querySelector("[data-page-copy]").shadowRoot.querySelector(selector);window.box=(el)=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}');
   }
   await send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 800, deviceScaleFactor: 1, mobile: false });
   await t.test('create all items before selection without placeholders', async () => {
@@ -122,8 +128,8 @@ test('browser checks', { timeout: 60000 }, async (t) => {
   });
   await t.test('put colors first and geometry last', async () => {
     await fresh(); await run('editor.select(document.querySelector("#headline"))');
-    const order = await run('Array.from(document.querySelector("in-app-editor").shadowRoot.querySelector("[data-fields]").querySelectorAll("textarea,input,select")).map(el=>el.hasAttribute("data-text")?"text":el.dataset.style||el.dataset.frame||el.name)');
-    assert.deepEqual(order.slice(0,6), ['color','background-color','border-color','text','font-size','font-weight']);
+    const order = await run('Array.from(document.querySelector("in-app-editor").shadowRoot.querySelector("[data-fields]").querySelectorAll("[data-text],[data-style],[data-frame]")).map(el=>el.hasAttribute("data-text")?"text":el.dataset.style||el.dataset.frame||el.name)');
+    assert.deepEqual(order.slice(0,7), ['color','background-color','border-color','text','border-radius','border-width','font-family']);
     assert.deepEqual(order.slice(-5), ['x','y','scale','width','height']);
   });
   await t.test('preserve the starting view within text raster rounding', async () => {
@@ -187,7 +193,7 @@ test('browser checks', { timeout: 60000 }, async (t) => {
 
   await t.test('show one instruction before selection', async () => {
     await fresh();
-    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-idle]").innerText.trim()'), 'Click anywhere to edit');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-idle] .hint").innerText.trim()'), 'Click anywhere to edit');
     assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-panel]").hidden'), true);
     await run('editor.mount()');
     assert.equal(await run('document.querySelectorAll("in-app-editor").length'), 1);
@@ -391,7 +397,7 @@ test('browser checks', { timeout: 60000 }, async (t) => {
     await layout(); await run('editor.open()');
     const card = await run('box(copy("#card"))'), square = await run('box(copy("#square"))');
     await drag({x:card.x-5,y:card.y-5},card.width+10,card.height+10);
-    await drag({x:card.x+5,y:card.y+40},20,30);
+    await drag({x:square.x+16,y:square.y+16},20,30);
     assert.equal((await run('box(copy("#square"))')).x,square.x+20);
     assert.equal((await run('box(copy("#card"))')).y,card.y+30);
     const bounds = await run('box(document.querySelector("in-app-editor").shadowRoot.querySelector("[data-selection]"))');
@@ -463,6 +469,107 @@ test('browser checks', { timeout: 60000 }, async (t) => {
     assert.equal(await run('document.elementFromPoint(400,440).id'),'above-text');
     await run('editor.open()');
     assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-page-copy]").shadowRoot.elementFromPoint(400,440).id'),'above-text');
+  });
+  await t.test('open at 80 percent with a reset button above the hint', async () => {
+    await fresh('{persist:false,open:true,initialZoom:undefined}');
+    const source = await run('box(document.querySelector("#headline"))'), item = await run('box(copy("#headline"))');
+    assert.ok(Math.abs(item.width-source.width*.8)<.1);
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-zoom-value]").textContent'),'80%');
+    const reset = await handle('[data-idle] [data-action="reset"]'), hint = await handle('[data-idle] .hint');
+    assert.ok(reset.y<hint.y);
+    assert.ok((await run('box(document.querySelector("in-app-editor").shadowRoot.querySelector("[data-stage]"))')).x>0);
+    await sameSource();
+  });
+  await t.test('show color pickers and keep pasted colors and opacity in sync', async () => {
+    await fresh(); await click('#button');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelectorAll("input[type=color]").length'),3);
+    await uiValue('[data-color="background-color"]','#e34b23','input');
+    await uiValue('[data-color="background-color"]','#e34b23');
+    assert.equal(await run('getComputedStyle(copy("#button")).backgroundColor'),'rgb(227, 75, 35)');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-style=background-color]").value'),'#E34B23');
+    await uiValue('[data-alpha="background-color"]',50,'input');
+    await uiValue('[data-alpha="background-color"]',50);
+    assert.equal(await run('getComputedStyle(copy("#button")).backgroundColor'),'rgba(227, 75, 35, 0.5)');
+    await uiValue('[data-style="color"]','#22cc88');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-color=color]").value'),'#22cc88');
+    assert.equal(await run('getComputedStyle(copy("#button")).color'),'rgb(34, 204, 136)');
+    await sameSource();
+  });
+  await t.test('use sliders, steppers, and lists with one undo for a slider drag', async () => {
+    await fresh(); await click('#headline');
+    const original = await run('getComputedStyle(copy("#headline")).fontSize');
+    await uiValue('[data-range-style="font-size"]',40,'input');
+    await uiValue('[data-range-style="font-size"]',50,'input');
+    await uiValue('[data-range-style="font-size"]',60,'input');
+    await uiValue('[data-range-style="font-size"]',60);
+    assert.equal(await run('getComputedStyle(copy("#headline")).fontSize'),'60px');
+    await run('editor.undo()'); assert.equal(await run('getComputedStyle(copy("#headline")).fontSize'),original);
+    await uiClick('[data-number="font-size"] [data-step="1"]');
+    assert.equal(await run('getComputedStyle(copy("#headline")).fontSize'),parseFloat(original)+1+'px');
+    await uiValue('[data-style="font-weight"]','700'); await uiValue('[data-style="font-family"]','Georgia, serif');
+    assert.equal(await run('getComputedStyle(copy("#headline")).fontWeight'),'700');
+    assert.match(await run('getComputedStyle(copy("#headline")).fontFamily'),/Georgia/);
+    await uiClick('[data-choice-style="border-style"][data-value="solid"]');
+    assert.equal(await run('getComputedStyle(copy("#headline")).borderTopWidth'),'1px');
+    await uiValue('[data-range-style="border-width"]',4);
+    assert.equal(await run('getComputedStyle(copy("#headline")).borderTopWidth'),'4px');
+    const order = await run('Array.from(document.querySelector("in-app-editor").shadowRoot.querySelectorAll("[data-section]")).map(el=>el.dataset.section)');
+    assert.deepEqual(order.slice(0,4),['color','text','border','font']);
+    await sameSource();
+  });
+  await t.test('require both reset steps and let either step be cancelled', async () => {
+    await fresh(); await run('editor.select(document.querySelector("#headline"));editor.setText("Edited")');
+    await uiClick('[data-panel] [data-action="reset"]');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-reset-title]").textContent'),'Reset edits?');
+    await uiClick('[data-reset-cancel]'); assert.equal(await run('copy("#headline").textContent'),'Edited');
+    await uiClick('[data-panel] [data-action="reset"]'); await uiClick('[data-reset-next]');
+    assert.equal(await run('copy("#headline").textContent'),'Edited');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-reset-title]").textContent'),'Reset to the current page?');
+    await uiClick('[data-reset-cancel]'); assert.equal(await run('copy("#headline").textContent'),'Edited');
+    await uiClick('[data-panel] [data-action="reset"]'); await uiClick('[data-reset-next]'); await uiClick('[data-reset-next]');
+    assert.equal(await run('copy("#headline").textContent'),'Hello world');
+    assert.equal(await run('editor.getChanges().length'),0);
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-panel]").hidden'),true);
+    await uiClick('[data-idle] [data-action="reset"]'); await key('Escape');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-reset-dialog]").hidden'),true);
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-workspace]").hidden'),false);
+    await sameSource();
+  });
+  await t.test('reset captures the current page, including app changes', async () => {
+    await fresh(); await run('editor.select(document.querySelector("#headline"));editor.setText("Edited");document.querySelector("#headline").textContent="App update"');
+    await uiClick('[data-panel] [data-action="reset"]'); await uiClick('[data-reset-next]'); await uiClick('[data-reset-next]');
+    assert.equal(await run('copy("#headline").textContent'),'App update');
+    assert.equal(await run('document.querySelector("#headline").textContent'),'App update');
+  });
+  await t.test('skip a card that surrounds the selection box in either drag direction', async () => {
+    await layout(); await run('editor.open();editor.select(document.querySelector("#card"))');
+    const card = await run('box(copy("#card"))'), title = await run('box(copy("#rich-title"))');
+    await uiClick('[data-mode="select"]');
+    const x = card.x+card.width*.6, top = title.y-8, bottom = card.y+card.height-16;
+    await drag({x,y:top},-12,bottom-top);
+    const selected = await run('Array.from(document.querySelector("in-app-editor").shadowRoot.querySelectorAll("[data-selected-item]")).map(el=>el.dataset.selectedItem)');
+    assert.ok(selected.length>0); assert.ok(!selected.includes('#card'));
+    assert.deepEqual(await run('box(copy("#card"))'),card);
+    await drag({x:x-12,y:bottom},12,top-bottom);
+    assert.ok(!await run('Boolean(document.querySelector("in-app-editor").shadowRoot.querySelector(\'[data-selected-item="#card"]\'))'));
+    await drag({x:card.x+5,y:top},-12,bottom-top);
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-element]").textContent'),'article');
+    assert.deepEqual(await run('box(copy("#card"))'),card);
+  });
+  await t.test('switch between select, move, and pan from the top row', async () => {
+    await layout(); await run('editor.open();editor.select(document.querySelector("#card"))');
+    const card = await run('box(copy("#card"))'), square = await run('box(copy("#square"))');
+    await uiClick('[data-mode="move"]');
+    await drag({x:card.x+5,y:card.y+45},30,40);
+    assert.equal((await run('box(copy("#card"))')).x,card.x+30);
+    assert.deepEqual(await run('box(copy("#square"))'),square);
+    await uiClick('[data-mode="pan"]'); const before = await run('box(copy("#square"))');
+    const changes = await run('editor.getChanges().length');
+    await drag({x:card.x+5,y:card.y+45},20,25);
+    assert.equal((await run('box(copy("#square"))')).x,before.x+20);
+    assert.equal(await run('editor.getChanges().length'),changes);
+    await uiClick('[data-mode="select"]');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("button[data-mode=select]").getAttribute("aria-pressed")'),'true');
   });
   await t.test('remove the copy and leave source handlers intact', async () => {
     await fresh(); await run('editor.select(document.querySelector("#headline"));editor.setText("Copy");editor.destroy()');

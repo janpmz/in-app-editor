@@ -16,5 +16,10 @@ Use the ASD-STE100 guide at `~/.claude/skills/asd-ste100/SKILL.md` when availabl
 - Move items together only when the user selects them together or makes a group.
 - Start each edit session from the current page. Save drafts only when storage is on.
 - Put text, background, and border colors first in the sidebar.
+- Use color pickers, sliders, buttons, and lists. Keep color fields for copy and paste.
+- Put Border after text and before Font.
+- Open edit mode at 80%.
+- Ask twice before the user resets the page.
+- Skip items that fully surround the selection box. Select them when the box crosses their edge.
 - Use the bottom-right handle to scale the item and its contents.
 - Use side handles to resize the box.

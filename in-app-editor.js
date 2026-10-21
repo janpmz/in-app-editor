@@ -8,6 +8,7 @@
   const inherited = new Set(['color', 'font-family', 'font-size', 'font-style', 'font-weight', 'font-stretch', 'font-variant', 'line-height', 'letter-spacing', 'word-spacing', 'text-align', 'text-transform', 'text-indent', 'visibility', 'direction', '-webkit-text-fill-color']);
   let state, readyHandler;
   const icons = {
+    select: '<path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4M4 11v2M11 4h2M20 11v2M11 20h2"/>', move: '<path d="m12 2 3 3M12 2 9 5M12 2v20m0 0 3-3m-3 3-3-3M2 12l3-3m-3 3 3 3M2 12h20m0 0-3-3m3 3-3 3"/>', pan: '<path d="M8 13V5a2 2 0 0 1 4 0v7-9a2 2 0 0 1 4 0v9-6a2 2 0 0 1 4 0v9c0 5-3 7-7 7-3 0-5-2-7-5l-3-4a2 2 0 0 1 3-3l2 3"/>',
     close: '<path d="m6 6 12 12M6 18 18 6"/>', undo: '<path d="M9 5 4 10l5 5M4 10h10a6 6 0 0 1 0 12"/>', redo: '<path d="m15 5 5 5-5 5M20 10H10a6 6 0 0 0 0 12"/>',
     delete: '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>', group: '<rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/>', ungroup: '<path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/><rect x="8" y="8" width="8" height="8"/>', side: '<path d="M8 3H4v18h4M16 3h4v18h-4M11 7l-4 5 4 5M13 7l4 5-4 5"/>', scale: '<path d="M8 16 17 7M8 7h9v9"/>'
   };
@@ -45,7 +46,8 @@
     const workspace = state.root.querySelector('[data-workspace]'), stage = state.root.querySelector('[data-stage]');
     state.sourceKeys = new WeakMap(); state.keys = new WeakMap(); state.sources = new WeakMap(); state.copies = new WeakMap(); state.layers = new Map(); state.sourceById = new Map(); state.recordIds = new Map(); state.selected = state.hovered = null; state.selection.clear(); state.canvas.replaceChildren();
     const width = Math.max(document.documentElement.scrollWidth, window.innerWidth), height = Math.max(document.documentElement.scrollHeight, window.innerHeight);
-    state.page = { width, height }; state.view = { x: -window.scrollX, y: -window.scrollY, scale: 1 };
+    const scale = Math.max(.1, Math.min(4, Number(state.options.initialZoom) || .8));
+    state.page = { width, height }; state.view = { x: innerWidth * (1 - scale) / 2 - window.scrollX * scale, y: innerHeight * (1 - scale) / 2 - window.scrollY * scale, scale };
     Object.assign(stage.style, { width: width + 'px', height: height + 'px' });
     const pageCSS = getComputedStyle(document.documentElement);
     workspace.style.colorScheme = pageCSS.colorScheme;
@@ -373,11 +375,62 @@
     remember(); const record = recordFor(element); record.text ||= { before: readText(element), after: '' }; record.text.after = value; writeText(element, value);
     if (value === record.text.before) delete record.text; prune(record); save(); return true;
   }
-  function styleSelection(property, value) {
-    if (!state.selection.size || (value && !CSS.supports(property, value))) return false;
-    remember(); let valid = true;
-    for (const element of state.selection) valid = setStyle(property, value, element, false) && valid;
-    save(); return valid;
+  function controlHistory(key, live) {
+    if (state.controlEdit !== key) { remember(); state.controlEdit = key; }
+    if (!live) state.controlEdit = null;
+  }
+  function updateStyleControl(property, value, live = false) {
+    if (!state.selection.size || !CSS.supports(property, value)) return false;
+    controlHistory(property, live);
+    for (const element of state.selection) {
+      setStyle(property, value, element, false);
+      if (property === 'border-width' && parseFloat(value) > 0 && getComputedStyle(element).borderStyle === 'none') setStyle('border-style', 'solid', element, false);
+      if (property === 'border-style' && value !== 'none' && parseFloat(getComputedStyle(element).borderWidth) === 0) setStyle('border-width', '1px', element, false);
+    }
+    syncControl(property); if (property === 'border-width') syncControl('border-style'); if (property === 'border-style') syncControl('border-width'); save(); return true;
+  }
+  function updateFrameControl(property, value, live = false) {
+    if (!state.selected || !Number.isFinite(value) || (property === 'scale' && value < .02)) return false;
+    controlHistory('frame:' + property, live);
+    const first = frameFor(layerFor(state.selected)), bounds = boundsFor(state.selection, true), factor = value / first.scale;
+    for (const element of state.selection) {
+      const layer = layerFor(element), frame = frameFor(layer);
+      const next = property === 'scale' ? { ...frame, x: bounds.x + (frame.x - bounds.x) * factor, y: bounds.y + (frame.y - bounds.y) * factor, scale: frame.scale * factor } : { ...frame, [property]: frame[property] + value - first[property] };
+      setFrame(layer, next, true); recordFor(element).frame = frameFor(layer);
+    }
+    syncControl(property, true); save(); return true;
+  }
+  function syncControl(property, frame = false) {
+    if (!state.selected) return;
+    const root = state.root, value = frame ? frameFor(layerFor(state.selected))[property] : getComputedStyle(state.selected).getPropertyValue(property);
+    const color = root.querySelector('[data-color-field="' + property + '"]');
+    if (color) {
+      const parts = colorParts(value); color.querySelector('[data-style]').value = colorText(parts); color.querySelector('[data-color]').value = parts.hex;
+      color.querySelector('.swatch').style.setProperty('--alpha', parts.alpha); color.querySelector('[data-alpha]').value = Math.round(parts.alpha * 100); color.querySelector('output').textContent = Math.round(parts.alpha * 100) + '%'; return;
+    }
+    const number = root.querySelector('[data-number="' + property + '"]');
+    if (number) { const numeric = parseFloat(value); number.querySelector('input[type=number]').value = Number.isFinite(numeric) ? Math.round(numeric * 100) / 100 : ''; number.querySelector('input[type=range]').value = Number.isFinite(numeric) ? numeric : 0; }
+    for (const button of root.querySelectorAll('[data-choice-style="' + property + '"]')) button.setAttribute('aria-pressed', String(button.dataset.value === value));
+  }
+  function onControl(event) {
+    const target = event.target, live = event.type === 'input';
+    if (target.dataset.color || target.dataset.alpha) {
+      const property = target.dataset.color || target.dataset.alpha, field = target.closest('[data-color-field]'), current = colorParts(getComputedStyle(state.selected).getPropertyValue(property));
+      const parts = colorParts(field.querySelector('[data-color]').value); parts.alpha = target.dataset.alpha ? Number(target.value) / 100 : current.alpha || 1;
+      updateStyleControl(property, colorText(parts), live); return;
+    }
+    const property = target.dataset.rangeStyle || target.dataset.style, frame = target.dataset.rangeFrame || target.dataset.frame;
+    if (property) {
+      if (live && target.type !== 'range' && target.type !== 'number') return;
+      let value = target.value.trim();
+      if (target.type === 'range' || target.type === 'number') { if (!value || !Number.isFinite(Number(value))) return; value += target.dataset.unit || ''; }
+      const valid = updateStyleControl(property, value, live); target.setAttribute('aria-invalid', String(!valid));
+    } else if (frame) { if (target.value !== '') updateFrameControl(frame, Number(target.value), live); }
+    else if (!live) {
+      if (target.hasAttribute('data-text')) setText(target.value);
+      if (target.hasAttribute('data-text-node')) setTextNode(Number(target.dataset.textNode), target.value);
+      if (target.dataset.attribute) target.setAttribute('aria-invalid', String(!setAttribute(target.dataset.attribute, target.value)));
+    }
   }
   function setTextNode(index, value, element = state?.selected) {
     element = copyOf(element); if (!state || !editable(element)) return false;
@@ -421,37 +474,101 @@
     }).join('\n\n');
     return 'Apply these edits to the website source files.\nPage: ' + location.pathname + '\nThe edits use a separate page copy. Frame values give the item’s page position, size before scaling, and scale. ::text(n) identifies text node n within its parent. Match the result in the source files. Check wide and narrow screens.\n\n' + JSON.stringify(changes, null, 2);
   }
-  function field(property, label, value) { return '<label>' + label + '<input data-style="' + property + '" aria-label="' + label + '" value="' + escapeHTML(value) + '" spellcheck="false"></label>'; }
+  function colorParts(value) {
+    function parts(r, g, b, alpha) { return { r, g, b, alpha, hex: '#' + [r, g, b].map((part) => part.toString(16).padStart(2, '0')).join('') }; }
+    const rgb = value.match(/^rgba?\(([^)]+)\)$/i);
+    if (rgb) {
+      const channels = rgb[1].trim().split(/[,\s/]+/);
+      const numbers = channels.slice(0, 3).map((channel) => Math.round(parseFloat(channel) * (channel.endsWith('%') ? 2.55 : 1)));
+      return parts(...numbers, channels[3] === undefined ? 1 : parseFloat(channels[3]) / (channels[3].endsWith('%') ? 100 : 1));
+    }
+    if (/^#[\da-f]{3,8}$/i.test(value)) {
+      let hex = value.slice(1); if (hex.length < 5) hex = [...hex].map((char) => char + char).join('');
+      if (hex.length === 6 || hex.length === 8) return parts(parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16), hex.length === 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1);
+    }
+    const context = state.colorContext ||= document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    context.clearRect(0, 0, 1, 1); context.fillStyle = value; context.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+    return parts(r, g, b, a / 255);
+  }
+  function colorText(parts) { return parts.alpha === 1 ? parts.hex.toUpperCase() : 'rgba(' + [parts.r, parts.g, parts.b, Math.round(parts.alpha * 1000) / 1000].join(', ') + ')'; }
+  function colorControl(property, label, value) {
+    const parts = colorParts(value);
+    return '<div class="color-field" data-color-field="' + property + '"><div class="color-title"><label for="code-' + property + '">' + label + '</label><output data-alpha-value>' + Math.round(parts.alpha * 100) + '%</output></div><div class="color-row"><span class="swatch" style="--alpha:' + parts.alpha + '"><input type="color" data-color="' + property + '" aria-label="Pick ' + label.toLowerCase() + '" value="' + parts.hex + '"></span><input id="code-' + property + '" data-style="' + property + '" aria-label="' + label + '" value="' + escapeHTML(colorText(parts)) + '" spellcheck="false"><input type="range" data-alpha="' + property + '" aria-label="' + label + ' opacity" min="0" max="100" value="' + Math.round(parts.alpha * 100) + '"></div></div>';
+  }
   function selectField(property, label, values, current) {
-    if (!values.includes(current)) values = [current, ...values];
-    return '<label>' + label + '<select data-style="' + property + '" aria-label="' + label + '">' + values.map((value) => '<option' + (value === current ? ' selected' : '') + '>' + escapeHTML(value) + '</option>').join('') + '</select></label>';
+    values = values.map((entry) => Array.isArray(entry) ? entry : [entry, entry]);
+    if (!values.some(([value]) => String(value) === current)) values.unshift([current, current]);
+    return '<label>' + label + '<select data-style="' + property + '" aria-label="' + label + '">' + values.map(([value, name]) => '<option value="' + escapeHTML(value) + '"' + (String(value) === current ? ' selected' : '') + '>' + escapeHTML(name) + '</option>').join('') + '</select></label>';
+  }
+  function numberControl(property, label, value, options = {}, frame = false) {
+    const unit = options.unit ?? 'px', step = options.step || 1, minimum = options.min ?? 0, limit = options.max || 200, numeric = parseFloat(value);
+    const current = Number.isFinite(numeric) ? Math.round(numeric * 100) / 100 : '', maximum = Math.max(limit, Number(current) * 2);
+    const kind = frame ? 'frame' : 'style', attributes = ' min="' + minimum + '" max="' + maximum + '" step="' + step + '"';
+    return '<div class="number-field" data-number="' + property + '"><div class="number-title"><label for="number-' + property + '">' + label + '</label>' + (options.auto ? '<button class="auto" data-auto-style="' + property + '" data-value="' + options.auto + '" aria-label="Automatic ' + label.toLowerCase() + '">Auto</button>' : '') + '</div><div class="stepper"><button data-step="-1" aria-label="Decrease ' + label.toLowerCase() + '">−</button><input id="number-' + property + '" type="number" data-' + kind + '="' + property + '" data-unit="' + unit + '" aria-label="' + label + '"' + attributes + ' value="' + current + '" placeholder="Auto"><span class="unit" aria-hidden="true">' + unit + '</span><button data-step="1" aria-label="Increase ' + label.toLowerCase() + '">+</button></div><input type="range" data-range-' + kind + '="' + property + '" data-unit="' + unit + '" aria-label="' + label + ' slider"' + attributes + ' value="' + (current === '' ? options.fallback || 0 : current) + '"></div>';
+  }
+  function choiceControl(property, label, values, current) {
+    return '<div class="choice-field"><span class="control-label">' + label + '</span><div class="choices" role="group" aria-label="' + label + '">' + values.map(([value, name]) => '<button data-choice-style="' + property + '" data-value="' + value + '" aria-label="' + label + ': ' + name + '" aria-pressed="' + (value === current) + '">' + name + '</button>').join('') + '</div></div>';
+  }
+  function fontControl(current) {
+    const fonts = [[current, /system-ui|-apple-system/.test(current) ? 'System' : current.split(',')[0].replace(/["']/g, '')], ['system-ui, sans-serif', 'System'], ['Arial, sans-serif', 'Arial'], ['Helvetica, sans-serif', 'Helvetica'], ['Georgia, serif', 'Georgia'], ['Times New Roman, serif', 'Times New Roman'], ['Verdana, sans-serif', 'Verdana'], ['Courier New, monospace', 'Courier New']];
+    for (const font of document.fonts) { const family = font.family.replace(/["']/g, ''); if (!fonts.some(([, name]) => name === family)) fonts.push([font.family + ', sans-serif', family]); }
+    return selectField('font-family', 'Font', fonts.filter((entry, index, all) => all.findIndex((other) => other[1] === entry[1]) === index), current);
   }
   function renderPanel() {
     if (!state) return;
     const element = state.selected, panel = state.root.querySelector('[data-panel]'); panel.hidden = !state.active || !element?.isConnected; state.root.querySelector('[data-idle]').hidden = !state.active || Boolean(element?.isConnected);
+    renderMode();
     if (panel.hidden) { draw(); return; }
-    const source = sourceOf(element), css = getComputedStyle(element), multiple = state.selection.size > 1; state.root.querySelector('[data-element]').textContent = multiple ? state.selection.size + ' items' : source.getAttribute?.('aria-label') || source.localName || 'Text';
-    function section(title, properties) { return '<section><h3>' + title + '</h3><div class="grid">' + properties.map(([property, label]) => field(property, label, css.getPropertyValue(property))).join('') + '</div></section>'; }
-    let html = section('Color', [['color', 'Text color'], ['background-color', 'Background color'], ['border-color', 'Border color']]);
-    if (!multiple && textAllowed(element)) html += '<section><textarea data-text aria-label="Text" rows="3">' + escapeHTML(readText(element)) + '</textarea></section>';
+    const source = sourceOf(element), css = getComputedStyle(element), multiple = state.selection.size > 1;
+    state.root.querySelector('[data-element]').textContent = multiple ? state.selection.size + ' items' : source.getAttribute?.('aria-label') || source.localName || 'Text';
+    function numbers(title, properties) { return '<section data-section="' + title.toLowerCase() + '"><h3>' + title + '</h3><div class="grid">' + properties.map(([property, label, options]) => numberControl(property, label, css.getPropertyValue(property), options)).join('') + '</div></section>'; }
+    let html = '<section data-section="color"><h3>Color</h3>' + [['color', 'Text color'], ['background-color', 'Background color'], ['border-color', 'Border color']].map(([property, label]) => colorControl(property, label, css.getPropertyValue(property))).join('') + '</section>';
+    if (!multiple && textAllowed(element)) html += '<section data-section="text"><textarea data-text aria-label="Text" rows="3">' + escapeHTML(readText(element)) + '</textarea></section>';
     else if (!multiple && !element.matches(noText)) {
       const nodes = [...element.childNodes].map((node, index) => ({ node, index })).filter(({ node }) => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
-      if (nodes.length) html += '<section>' + nodes.map(({ node, index }, order) => '<label>Text ' + (order + 1) + '<textarea data-text-node="' + index + '" aria-label="Text ' + (order + 1) + '" rows="2">' + escapeHTML(node.textContent) + '</textarea></label>').join('') + '</section>';
+      if (nodes.length) html += '<section data-section="text">' + nodes.map(({ node, index }, order) => '<label>Text ' + (order + 1) + '<textarea data-text-node="' + index + '" aria-label="Text ' + (order + 1) + '" rows="2">' + escapeHTML(node.textContent) + '</textarea></label>').join('') + '</section>';
     }
+    html += '<section data-section="border"><h3>Border</h3><div class="grid">' + numberControl('border-radius', 'Radius', css.borderRadius, { max: 100 }) + numberControl('border-width', 'Border width', css.borderWidth, { max: 20 }) + '</div>' + choiceControl('border-style', 'Border style', [['none', 'None'], ['solid', 'Solid'], ['dashed', 'Dash'], ['dotted', 'Dot']], css.borderStyle) + '</section>';
     const frame = frameFor(layerFor(element)), hasText = multiple || Boolean(readText(element).trim());
-    if (hasText) html += section('Text', [['font-size', 'Font size'], ['font-weight', 'Weight']]);
-    if (hasText) html += '<section><div class="grid">' + [['font-family', 'Font'], ['line-height', 'Line height'], ['letter-spacing', 'Letter spacing']].map(([property, label]) => field(property, label, css.getPropertyValue(property))).join('') + '</div>' + selectField('text-align', 'Align', ['left', 'center', 'right'], css.textAlign) + '</section>';
+    if (hasText) {
+      html += '<section data-section="font"><h3>Font</h3>' + fontControl(css.fontFamily) + '<div class="grid font-grid">' + numberControl('font-size', 'Font size', css.fontSize, { min: 1, max: 120 }) + selectField('font-weight', 'Weight', [['100', 'Thin'], ['200', 'Extra light'], ['300', 'Light'], ['400', 'Regular'], ['500', 'Medium'], ['600', 'Semibold'], ['700', 'Bold'], ['800', 'Extra bold'], ['900', 'Black']], css.fontWeight) + numberControl('line-height', 'Line height', css.lineHeight, { max: 160, step: .1, auto: 'normal', fallback: parseFloat(css.fontSize) * 1.2 }) + numberControl('letter-spacing', 'Letter spacing', css.letterSpacing, { min: -10, max: 30, step: .1, auto: 'normal' }) + '</div>' + choiceControl('text-align', 'Align', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']], css.textAlign === 'start' ? 'left' : css.textAlign === 'end' ? 'right' : css.textAlign) + '</section>';
+    }
     if (element.matches('img')) html += '<section>' + ['src', 'alt'].map((name) => '<label>' + (name === 'src' ? 'Image URL' : 'Alt text') + '<input data-attribute="' + name + '" aria-label="' + (name === 'src' ? 'Image URL' : 'Alt text') + '" value="' + escapeHTML(element.getAttribute(name) || '') + '"></label>').join('') + '</section>';
     if (element.matches('a')) html += '<section><label>Link<input data-attribute="href" aria-label="Link" value="' + escapeHTML(element.getAttribute('href') || '') + '"></label></section>';
-    html += section('Border', [['border-radius', 'Radius'], ['border-width', 'Width'], ['border-style', 'Style']]);
-    html += section('Spacing', [['padding-top', 'Top'], ['padding-right', 'Right'], ['padding-bottom', 'Bottom'], ['padding-left', 'Left'], ['gap', 'Gap']]);
-    html += '<section><form data-custom><div class="grid"><label>Property<input name="property" aria-label="Style property" required></label><label>Value<input name="value" aria-label="Style value" required></label></div><button type="submit" class="wide">Apply</button></form></section>';
-    html += '<section data-position><h3>Position</h3><div class="grid">' + ['x', 'y', 'scale'].map((key) => '<label>' + (key === 'scale' ? 'Scale' : key.toUpperCase()) + '<input data-frame="' + key + '" aria-label="' + (key === 'scale' ? 'Scale' : key.toUpperCase()) + '" type="number" step="' + (key === 'scale' ? '.05' : '1') + '" value="' + Math.round(frame[key] * 100) / 100 + '"></label>').join('') + '</div></section>';
-    html += section('Size', [['width', 'Width'], ['height', 'Height']]);
+    html += numbers('Spacing', [['padding-top', 'Top', { max: 120 }], ['padding-right', 'Right', { max: 120 }], ['padding-bottom', 'Bottom', { max: 120 }], ['padding-left', 'Left', { max: 120 }], ['gap', 'Gap', { max: 120 }]]);
+    html += '<section data-position><h3>Position</h3><div class="grid">' + ['x', 'y', 'scale'].map((key) => numberControl(key, key === 'scale' ? 'Scale' : key.toUpperCase(), frame[key], key === 'scale' ? { min: .02, max: 4, step: .01, unit: '' } : { min: -Math.max(state.page.width, state.page.height), max: Math.max(state.page.width, state.page.height) * 2 }, true)).join('') + '</div></section>';
+    html += numbers('Size', [['width', 'Width', { max: Math.max(state.page.width, 1000) }], ['height', 'Height', { max: Math.max(state.page.height, 1000) }]]);
     state.root.querySelector('[data-fields]').innerHTML = html; state.root.querySelector('[data-fields]').scrollTop = 0; draw();
   }
+  function renderMode() {
+    if (!state) return; state.root.querySelector('[data-workspace]').dataset.mode = state.mode;
+    for (const button of state.root.querySelectorAll('[data-mode]')) if (button.tagName === 'BUTTON') button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode));
+  }
+  function setMode(mode) {
+    if (!['select', 'move', 'pan'].includes(mode)) return;
+    finishText(); endGesture(true); state.controlEdit = null; state.mode = mode; state.lastTap = null; renderMode(); draw();
+  }
+  function closeReset() {
+    state.resetStep = 0; state.root.querySelector('[data-reset-dialog]').hidden = true;
+    const target = state.resetFocus; if (target?.isConnected && target.getClientRects().length) target.focus(); else state.root.querySelector('[data-toggle]').focus();
+  }
+  function requestReset() {
+    finishText(); endGesture(true); hideMenu(); state.controlEdit = null; state.resetFocus = state.root.activeElement; state.resetStep = 1; renderReset();
+  }
+  function renderReset() {
+    const root = state.root, second = state.resetStep === 2; root.querySelector('[data-reset-dialog]').hidden = false;
+    root.querySelector('[data-reset-title]').textContent = second ? 'Reset to the current page?' : 'Reset edits?';
+    root.querySelector('[data-reset-copy]').hidden = !second; root.querySelector('[data-reset-next]').textContent = second ? 'Reset' : 'Continue';
+    root.querySelector('[data-reset-next]').classList.toggle('danger', second); root.querySelector('[data-reset-cancel]').focus();
+  }
+  function confirmReset() {
+    if (state.resetStep === 1) { state.resetStep = 2; renderReset(); return; }
+    if (state.resetStep !== 2) return;
+    closeReset(); if (state.changes.size) remember(); state.changes.clear(); capturePage(); save(); renderPanel();
+  }
   function selectItems(elements, expand = true) {
-    finishText(); const items = new Set();
+    finishText(); state.controlEdit = null; const items = new Set();
     for (let element of elements) {
       element = copyOf(element); element = state.owners.get(element) || element;
       const layer = layerFor(element); if (!layer || layer.deleted) continue;
@@ -475,7 +592,7 @@
     if (!state) return;
     const box = state.root.querySelector('[data-selection]'), bounds = state.active && boundsFor(state.selection);
     box.hidden = !bounds; if (bounds) Object.assign(box.style, { left: bounds.x + 'px', top: bounds.y + 'px', width: bounds.width + 'px', height: bounds.height + 'px' });
-    box.querySelectorAll('[data-resize]').forEach((handle) => { handle.hidden = state.selection.size > 1; });
+    box.querySelectorAll('[data-resize]').forEach((handle) => { handle.hidden = state.selection.size > 1 || state.mode === 'pan'; }); box.querySelector('[data-scale]').hidden = state.mode === 'pan';
     const outlines = state.root.querySelector('[data-selected-items]'); outlines.replaceChildren();
     if (state.active && state.selection.size > 1) for (const element of state.selection) { const outline = document.createElement('div'); outline.className = 'outline member'; outline.dataset.selectedItem = selectorFor(element); drawBox(outline, element); outlines.append(outline); }
     drawBox(state.root.querySelector('[data-hover]'), state.active && !state.selection.has(state.hovered) ? state.hovered : null);
@@ -500,8 +617,8 @@
   function setActive(active) {
     if (!state || Boolean(active) === state.active) return;
     finishText(); endGesture(true); state.active = Boolean(active);
-    hideMenu();
-    if (state.active) { if (state.options.persist !== true) { state.changes.clear(); state.past = []; state.future = []; } capturePage(); save(); }
+    hideMenu(); if (state.resetStep) closeReset(); state.controlEdit = null;
+    if (state.active) { state.mode = 'select'; if (state.options.persist !== true) { state.changes.clear(); state.past = []; state.future = []; } capturePage(); save(); }
     else { state.root.querySelector('[data-workspace]').hidden = true; state.selected = state.hovered = null; state.selection.clear(); }
     state.root.querySelector('[data-zoom]').hidden = !state.active;
     const button = state.root.querySelector('[data-toggle]'); button.setAttribute('aria-expanded', String(state.active)); button.setAttribute('aria-label', state.active ? 'Exit edit mode' : 'Edit page'); button.innerHTML = state.active ? icon('close') : 'EDIT'; renderPanel();
@@ -510,7 +627,8 @@
   function onPointerDown(event) {
     if (!state.active || state.typing?.element.contains(event.composedPath()[0])) return;
     hideMenu();
-    if (event.button === 1 || (event.button === 0 && state.space)) {
+    state.controlEdit = null;
+    if (event.button === 1 || (event.button === 0 && (state.space || state.mode === 'pan'))) {
       block(event); state.gesture = { kind: 'pan', pointer: event.pointerId, startX: event.clientX, startY: event.clientY, view: { ...state.view } }; state.root.querySelector('[data-workspace]').setPointerCapture(event.pointerId); return;
     }
     if (event.button !== 0) return;
@@ -523,7 +641,7 @@
       for (const member of members) if (items.has(member)) items.delete(member); else items.add(member);
       selectItems(items); return;
     }
-    if (!element || (!layer.plan.atomic && !state.selection.has(element))) {
+    if (!element || (state.mode === 'select' && !layer.plan.atomic)) {
       state.gesture = { kind: 'marquee', pointer: event.pointerId, startX: event.clientX, startY: event.clientY, hit: element, base: event.shiftKey ? [...state.selection] : [], previous: [...state.selection], changed: false };
       state.root.querySelector('[data-workspace]').setPointerCapture(event.pointerId); return;
     }
@@ -545,7 +663,11 @@
     if (gesture.kind === 'marquee') {
       gesture.changed = true; const x = Math.min(gesture.startX, event.clientX), y = Math.min(gesture.startY, event.clientY), width = Math.abs(screenX), height = Math.abs(screenY), box = state.root.querySelector('[data-marquee]');
       box.hidden = false; Object.assign(box.style, { left: x + 'px', top: y + 'px', width: width + 'px', height: height + 'px' });
-      const hits = [...state.layers.values()].filter((layer) => { if (layer.deleted || !layer.plan.selectable) return false; const rect = layer.element.getBoundingClientRect(); return rect.left <= x + width && rect.right >= x && rect.top <= y + height && rect.bottom >= y; });
+      const hits = [...state.layers.values()].filter((layer) => {
+        if (layer.deleted || !layer.plan.selectable) return false;
+        const rect = layer.element.getBoundingClientRect(), surrounds = x > rect.left && y > rect.top && x + width < rect.right && y + height < rect.bottom;
+        return !surrounds && rect.left <= x + width && rect.right >= x && rect.top <= y + height && rect.bottom >= y;
+      });
       selectItems([...gesture.base, ...hits.map((layer) => layer.element)]); return;
     }
     if (!gesture.changed) { remember(); gesture.changed = true; for (const item of gesture.starts) releaseLayer(item.layer); state.root.querySelector('[data-workspace]').setPointerCapture(event.pointerId); }
@@ -601,6 +723,11 @@
   }
   function onKey(event) {
     if (!state.active) return;
+    if (state.resetStep) {
+      if (event.key === 'Escape') { block(event); closeReset(); }
+      else if (event.key === 'Tab') { block(event); const root = state.root, cancel = root.querySelector('[data-reset-cancel]'), next = root.querySelector('[data-reset-next]'); (root.activeElement === cancel ? next : cancel).focus(); }
+      return;
+    }
     const target = event.composedPath()[0], typing = target?.matches?.('input,textarea,select,[contenteditable]');
     if (!typing && event.code === 'Space') { block(event); state.space = true; }
     else if (event.key === 'Escape') { block(event); if (!state.root.querySelector('[data-menu]').hidden) hideMenu(); else if (state.gesture) endGesture(true); else if (state.typing) { finishText(); renderPanel(); } else setActive(false); }
@@ -615,10 +742,12 @@
   }
   function download() { const url = URL.createObjectURL(new Blob([exportChanges('json')], { type: 'application/json' })), link = document.createElement('a'); link.href = url; link.download = 'in-app-editor-changes.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
   const styles = `
+    .modes{display:flex;gap:4px;padding:8px;border-bottom:1px solid #27272a}.modes button{flex:1;min-width:0;padding:5px 6px;border-color:transparent;background:transparent;font-size:11px}.modes button[aria-pressed=true],.choices button[aria-pressed=true]{background:#3f3f46;border-color:#52525b;color:#fafafa}.control-label{display:block;color:#a1a1aa;font-size:11px}.number-title,.color-title{display:flex;align-items:center;justify-content:space-between;min-height:18px;gap:6px}.color-title output{font-size:10px;color:#71717a}.color-field+.color-field{margin-top:12px}.color-row{display:flex;align-items:center;gap:7px;margin-top:4px}.color-row input{margin:0}.swatch{position:relative;display:block;width:32px;height:32px;flex:0 0 32px;border:1px solid #3f3f46;border-radius:6px;overflow:hidden;background:repeating-conic-gradient(#71717a 0% 25%,#27272a 0% 50%) 0/8px 8px}.swatch input[type=color]{appearance:none;-webkit-appearance:none;display:block;width:100%;height:100%;min-height:0;padding:0;border:0;border-radius:0;opacity:var(--alpha);cursor:pointer;background:transparent}.swatch input[type=color]::-webkit-color-swatch-wrapper{padding:0}.swatch input[type=color]::-webkit-color-swatch{border:0}.swatch input[type=color]::-moz-color-swatch{border:0}.color-row input[data-style]{flex:1;width:0;font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px}.color-row input[type=range]{width:56px;flex:0 0 56px}.app input[type=range]{appearance:auto;display:block;min-height:18px;height:18px;padding:0;border:0;background:transparent;accent-color:#d4d4d8;cursor:pointer;margin-top:7px}.color-row input[type=range]{margin:0}.stepper{display:flex;align-items:center;height:32px;margin-top:4px;border:1px solid #3f3f46;border-radius:6px;background:#ffffff05;overflow:hidden}.stepper button{min-height:30px;width:23px;flex:0 0 23px;border:0;border-radius:0;padding:0;background:transparent;color:#a1a1aa}.stepper input[type=number]{appearance:textfield;-moz-appearance:textfield;margin:0;min-height:30px;height:30px;border:0;background:transparent;border-radius:0;padding:4px 0;text-align:center;font-size:11px}.stepper input::-webkit-inner-spin-button{appearance:none;margin:0}.stepper .unit{font-size:10px;color:#71717a;padding-right:2px}.auto{min-height:18px;height:18px;font-size:9px;padding:0 3px;border:0;background:transparent;color:#71717a}.choices{display:flex;gap:3px;margin-top:5px}.choices button{flex:1;min-width:0;padding:4px;font-size:10px;background:transparent}.choice-field{margin-top:12px}.font-grid{margin-top:12px}.dialog-backdrop{position:fixed;inset:0;display:grid;place-items:center;padding:20px;background:#0009;backdrop-filter:blur(3px);pointer-events:auto;z-index:20}.dialog{width:min(360px,100%);padding:20px;border:1px solid #3f3f46;border-radius:10px;background:#111113;box-shadow:0 16px 60px #0008}.dialog h2{font-size:15px;font-weight:600;margin:0}.dialog p{font-size:12px;color:#a1a1aa;margin:12px 0 0}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:24px}.dialog [data-reset-next]{background:#fafafa;color:#18181b}.dialog [data-reset-next].danger{background:#b91c1c;color:#fff;border-color:#b91c1c}
+
     :host{all:initial!important;position:fixed!important;inset:0!important;z-index:2147483647!important;pointer-events:none!important;color-scheme:dark!important}
     [hidden]{display:none!important}.workspace{position:fixed;inset:0;overflow:hidden;overscroll-behavior:contain;pointer-events:auto;background:#18181b;background-image:radial-gradient(#3f3f46 .7px,transparent .7px);background-size:16px 16px;touch-action:none}.stage{position:absolute;left:0;top:0;transform-origin:0 0;box-shadow:0 0 0 1px #3f3f46,0 16px 48px #0004}[data-page-copy]{display:block;width:100%;height:100%}
     .app{font:12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#fafafa;text-align:left;letter-spacing:0}.app *{box-sizing:border-box}button,input,textarea,select{font:inherit;color:inherit}button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:6px 10px;border:1px solid #3f3f46;border-radius:6px;background:#18181b;color:#fafafa;cursor:pointer}button:hover{background:#27272a}button:disabled{opacity:.35;cursor:default}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid #a1a1aa;outline-offset:2px}
-    .toggle{position:fixed;bottom:20px;right:20px;pointer-events:auto;min-width:40px;height:36px;background:#fafafa;color:#18181b;border-color:#fafafa;font-size:11px;font-weight:600}.toggle:hover{background:#d4d4d8}.idle{position:fixed;right:20px;bottom:68px;padding:9px 12px;border:1px solid #27272a;border-radius:6px;background:#18181b;color:#a1a1aa;pointer-events:none}
+    .toggle{position:fixed;bottom:20px;right:20px;pointer-events:auto;min-width:40px;height:36px;background:#fafafa;color:#18181b;border-color:#fafafa;font-size:11px;font-weight:600}.toggle:hover{background:#d4d4d8}.idle{position:fixed;right:20px;bottom:68px;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none}.idle button{pointer-events:auto}.hint{padding:9px 12px;border:1px solid #27272a;border-radius:6px;background:#18181b;color:#a1a1aa}
     .panel{position:fixed;right:20px;bottom:68px;width:288px;max-height:calc(100dvh - 88px);display:flex;flex-direction:column;border:1px solid #27272a;border-radius:8px;background:#111113;box-shadow:0 8px 32px #0006;overflow:hidden;pointer-events:auto}.panel.left{left:20px;right:auto}.head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border-bottom:1px solid #27272a}.element{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}.actions{display:flex;gap:2px}.actions button{width:28px;min-height:28px;padding:5px;border:0;background:transparent}.actions button:hover{background:#27272a}
     .fields{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#3f3f46 transparent}section{padding:14px;border-bottom:1px solid #27272a}h3{font-size:11px;font-weight:500;margin:0 0 10px;color:#fafafa}label{display:block;color:#a1a1aa;font-size:11px}input,textarea,select{display:block;width:100%;min-width:0;min-height:32px;margin-top:4px;padding:6px 8px;border:1px solid #3f3f46;border-radius:6px;background:#ffffff05;color:#fafafa;font-size:12px}textarea{min-height:68px;resize:vertical;line-height:1.5}section>textarea{margin:0}section>label+label{margin-top:8px}option{background:#18181b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.grid+label{margin-top:10px}.wide{width:100%;margin-top:10px}input[aria-invalid=true]{border-color:#f87171}
     .foot{padding:10px 12px;display:flex;align-items:center;gap:5px;background:#111113;border-top:1px solid #27272a}.foot .plain{border:0;background:transparent;color:#a1a1aa;font-size:11px;padding:4px}.foot .plain:hover{color:#fafafa;background:#27272a}.count{color:#71717a;font-size:10px;margin-right:auto}.copy{background:#fafafa;color:#18181b;border-color:#fafafa;min-height:30px;font-size:11px}.copy:hover{background:#d4d4d8}.fallback{padding:0 12px 12px}.fallback:has(textarea[hidden]){display:none}
@@ -630,10 +759,10 @@
     if (state) return api;
     if (!document.body) { if (!readyHandler) { readyHandler = () => { readyHandler = null; mount(options); }; document.addEventListener('DOMContentLoaded', readyHandler, { once: true }); } return api; }
     const host = document.createElement('in-app-editor'), root = host.attachShadow({ mode: 'open' });
-    root.innerHTML = '<style>' + styles + '</style><div data-workspace class="workspace" tabindex="-1" hidden><div data-stage class="stage"><div data-page-copy></div></div></div><div class="app"><div data-hover class="outline hover" hidden></div><div data-selected-items></div><div data-marquee class="marquee" hidden></div><div data-selection class="outline" hidden>' + ['n', 'e', 's', 'w'].map((side) => '<button data-resize="' + side + '" class="handle" aria-label="Resize ' + ({ n: 'top', e: 'right', s: 'bottom', w: 'left' })[side] + '"></button>').join('') + '<button data-scale class="handle scale" aria-label="Scale item" title="Scale">' + icon('scale') + '</button></div><div data-idle class="idle" hidden>Click anywhere to edit</div><aside data-panel class="panel" aria-label="Page editor" hidden><header class="head"><span data-element class="element"></span><div class="actions"><button data-action="move" aria-label="Move controls left" title="Move controls">' + icon('side') + '</button><button data-action="undo" aria-label="Undo" title="Undo" disabled>' + icon('undo') + '</button><button data-action="redo" aria-label="Redo" title="Redo" disabled>' + icon('redo') + '</button></div></header><div data-fields class="fields"></div><footer class="foot"><span data-count class="count" aria-label="Changed items"></span><button class="plain" data-action="reset">Reset</button><button class="plain" data-action="download">Export</button><button class="copy" data-action="copy">Copy changes</button></footer><div class="fallback"><textarea data-copy-fallback aria-label="Changes to copy" hidden></textarea></div></aside><button data-toggle class="toggle" aria-label="Edit page" aria-expanded="false">EDIT</button><div data-toast class="toast" role="status" hidden></div><div data-menu class="menu" role="menu" hidden>' + [['group', 'Group'], ['ungroup', 'Ungroup'], ['delete', 'Delete']].map(([name, label]) => '<button role="menuitem" data-action="' + name + '">' + icon(name) + label + '</button>').join('') + '</div><div data-zoom class="zoom" aria-label="Canvas zoom" hidden><button data-action="zoom-out" aria-label="Zoom out">−</button><button data-action="zoom-reset" data-zoom-value aria-label="Reset zoom">100%</button><button data-action="zoom-in" aria-label="Zoom in">+</button></div></div>';
+    root.innerHTML = '<style>' + styles + '</style><div data-workspace class="workspace" tabindex="-1" hidden><div data-stage class="stage"><div data-page-copy></div></div></div><div class="app"><div data-hover class="outline hover" hidden></div><div data-selected-items></div><div data-marquee class="marquee" hidden></div><div data-selection class="outline" hidden>' + ['n', 'e', 's', 'w'].map((side) => '<button data-resize="' + side + '" class="handle" aria-label="Resize ' + ({ n: 'top', e: 'right', s: 'bottom', w: 'left' })[side] + '"></button>').join('') + '<button data-scale class="handle scale" aria-label="Scale item" title="Scale">' + icon('scale') + '</button></div><div data-idle class="idle" hidden><button data-action="reset">Reset</button><div class="hint">Click anywhere to edit</div></div><aside data-panel class="panel" aria-label="Page editor" hidden><div class="modes" role="toolbar" aria-label="Canvas tools">' + [['select', 'Select'], ['move', 'Move'], ['pan', 'Pan']].map(([mode, label]) => '<button data-mode="' + mode + '" aria-label="' + label + (mode === 'pan' ? ' canvas' : ' items') + '" aria-pressed="' + (mode === 'select') + '">' + icon(mode) + label + '</button>').join('') + '</div><header class="head"><span data-element class="element"></span><div class="actions"><button data-action="move" aria-label="Move controls left" title="Move controls">' + icon('side') + '</button><button data-action="undo" aria-label="Undo" title="Undo" disabled>' + icon('undo') + '</button><button data-action="redo" aria-label="Redo" title="Redo" disabled>' + icon('redo') + '</button></div></header><div data-fields class="fields"></div><footer class="foot"><span data-count class="count" aria-label="Changed items"></span><button class="plain" data-action="reset">Reset</button><button class="plain" data-action="download">Export</button><button class="copy" data-action="copy">Copy changes</button></footer><div class="fallback"><textarea data-copy-fallback aria-label="Changes to copy" hidden></textarea></div></aside><button data-toggle class="toggle" aria-label="Edit page" aria-expanded="false">EDIT</button><div data-reset-dialog class="dialog-backdrop" hidden><div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="reset-title" aria-describedby="reset-copy"><h2 id="reset-title" data-reset-title>Reset edits?</h2><p id="reset-copy" data-reset-copy hidden>Your edits will be lost.</p><div class="dialog-actions"><button data-action="reset-cancel" data-reset-cancel>Cancel</button><button data-action="reset-next" data-reset-next>Continue</button></div></div></div><div data-toast class="toast" role="status" hidden></div><div data-menu class="menu" role="menu" hidden>' + [['group', 'Group'], ['ungroup', 'Ungroup'], ['delete', 'Delete']].map(([name, label]) => '<button role="menuitem" data-action="' + name + '">' + icon(name) + label + '</button>').join('') + '</div><div data-zoom class="zoom" aria-label="Canvas zoom" hidden><button data-action="zoom-out" aria-label="Zoom out">−</button><button data-action="zoom-reset" data-zoom-value aria-label="Reset zoom">100%</button><button data-action="zoom-in" aria-label="Zoom in">+</button></div></div>';
     document.documentElement.append(host);
     const canvas = root.querySelector('[data-page-copy]').attachShadow({ mode: 'open' });
-    state = { host, root, canvas, options, abort: new AbortController(), changes: new Map(), layers: new Map(), copies: new WeakMap(), sources: new WeakMap(), past: [], future: [], active: false, selected: null, selection: new Set(), groupSerial: 0, space: false, view: { x: 0, y: 0, scale: 1 }, hovered: null, typing: null, gesture: null, frame: 0, toastTimer: 0, key: options.storageKey || 'in-app-editor:v2:' + location.pathname };
+    state = { host, root, canvas, options, abort: new AbortController(), changes: new Map(), layers: new Map(), copies: new WeakMap(), sources: new WeakMap(), past: [], future: [], active: false, selected: null, selection: new Set(), mode: 'select', resetStep: 0, controlEdit: null, groupSerial: 0, space: false, view: { x: 0, y: 0, scale: 1 }, hovered: null, typing: null, gesture: null, frame: 0, toastTimer: 0, key: options.storageKey || 'in-app-editor:v2:' + location.pathname };
     if (options.persist === true) { try { const saved = JSON.parse(localStorage.getItem(state.key)); if (saved?.version === 2 && Array.isArray(saved.changes)) for (const record of saved.changes) { if (record && typeof record.selector === 'string' && record.styles && record.attributes && record.textNodes && typeof record.beforeStyle === 'string') state.changes.set(record.selector, record); } } catch {} }
     const signal = state.abort.signal, workspace = root.querySelector('[data-workspace]');
     workspace.addEventListener('pointerdown', onPointerDown, { signal }); workspace.addEventListener('contextmenu', onContextMenu, { signal }); canvas.addEventListener('click', (event) => { if (!state.typing?.element.contains(event.target)) block(event); }, { capture: true, signal });
@@ -651,19 +780,17 @@
     document.addEventListener('keyup', (event) => { if (event.code === 'Space') state.space = false; }, { signal }); window.addEventListener('blur', () => { state.space = false; endGesture(true); }, { signal });
     root.addEventListener('click', (event) => {
       const target = event.target.closest('button'); if (!target) return;
-      const actions = { undo, redo, reset, copy: copyChanges, download, group: groupItems, ungroup: ungroupItems, delete: deleteItems, 'zoom-in': () => zoomAt(state.view.scale * 1.2), 'zoom-out': () => zoomAt(state.view.scale / 1.2), 'zoom-reset': () => { state.view = { x: -window.scrollX, y: -window.scrollY, scale: 1 }; drawView(); }, move: () => { const left = root.querySelector('[data-panel]').classList.toggle('left'); target.setAttribute('aria-label', left ? 'Move controls right' : 'Move controls left'); } }; actions[target.dataset.action]?.();
+      if (target.dataset.mode) { setMode(target.dataset.mode); return; }
+      if (target.dataset.step) { const input = target.closest('[data-number]').querySelector('input[type=number]'); input.stepUp(Number(target.dataset.step)); onControl({ target: input, type: 'change' }); return; }
+      if (target.dataset.choiceStyle || target.dataset.autoStyle) { updateStyleControl(target.dataset.choiceStyle || target.dataset.autoStyle, target.dataset.value); return; }
+      const actions = { undo, redo, reset: requestReset, 'reset-next': confirmReset, 'reset-cancel': closeReset, copy: copyChanges, download, group: groupItems, ungroup: ungroupItems, delete: deleteItems, 'zoom-in': () => zoomAt(state.view.scale * 1.2), 'zoom-out': () => zoomAt(state.view.scale / 1.2), 'zoom-reset': () => { state.view = { x: -window.scrollX, y: -window.scrollY, scale: 1 }; drawView(); }, move: () => { const left = root.querySelector('[data-panel]').classList.toggle('left'); target.setAttribute('aria-label', left ? 'Move controls right' : 'Move controls left'); } }; actions[target.dataset.action]?.();
     }, { signal });
-    root.addEventListener('change', (event) => {
-      const target = event.target;
-      if (target.dataset.style) { const property = target.dataset.style; let value = target.value.trim(); if (/^-?\d+(\.\d+)?$/.test(value) && !['opacity', 'font-weight', 'line-height', 'z-index', 'flex-grow', 'flex-shrink', 'order'].includes(property)) value += 'px'; const valid = styleSelection(property, value); target.setAttribute('aria-invalid', String(!valid)); if (valid) target.value = value; }
-      if (target.hasAttribute('data-text')) setText(target.value); if (target.hasAttribute('data-text-node')) setTextNode(Number(target.dataset.textNode), target.value); if (target.dataset.attribute) target.setAttribute('aria-invalid', String(!setAttribute(target.dataset.attribute, target.value)));
-      if (target.dataset.frame && state.selected) { const value = Number(target.value), layer = layerFor(state.selected); if (!Number.isFinite(value) || (target.dataset.frame === 'scale' && value < .02)) return; remember(); const record = recordFor(state.selected); setFrame(layer, { ...frameFor(layer), [target.dataset.frame]: value }, true); record.frame = frameFor(layer); save(); }
-    }, { signal });
-    root.addEventListener('submit', (event) => { if (!event.target.matches('[data-custom]')) return; event.preventDefault(); const values = new FormData(event.target); if (styleSelection(values.get('property'), values.get('value'))) renderPanel(); }, { signal });
+    root.addEventListener('input', onControl, { signal }); root.addEventListener('change', onControl, { signal });
+    root.addEventListener('focusout', () => { state.controlEdit = null; }, { signal });
     save(); if (options.open) setActive(true); return api;
   }
   function destroy() { if (readyHandler) { document.removeEventListener('DOMContentLoaded', readyHandler); readyHandler = null; } if (!state) return; finishText(); endGesture(true); state.abort.abort(); clearTimeout(state.toastTimer); cancelAnimationFrame(state.frame); state.host.remove(); state = null; }
-  const api = Object.freeze({ mount, destroy, open: () => setActive(true), close: () => setActive(false), toggle: () => setActive(!state?.active), select, setStyle, setText, setTextNode, setAttribute, moveTo, undo, redo, reset, getChanges, exportChanges, version: '0.4.0' });
+  const api = Object.freeze({ mount, destroy, open: () => setActive(true), close: () => setActive(false), toggle: () => setActive(!state?.active), select, setStyle, setText, setTextNode, setAttribute, moveTo, undo, redo, reset, getChanges, exportChanges, version: '0.5.0' });
   window.InAppEditor = api;
   if (script && script.dataset.auto !== 'false') mount({ persist: script.dataset.persist === 'true', open: script.dataset.open === 'true' });
 })();
