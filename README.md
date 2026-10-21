@@ -1,8 +1,22 @@
 # In-App Editor
 
-Add an EDIT button to a website. Edit a separate copy of the page. The source page stays unchanged. All items get canvas coordinates when edit mode starts.
+Edit your website visually.
 
-Paste the [setup prompt](./PROMPT.md) into Codex in your website project. Codex adds the editor to that site.
+## How to add this right now
+
+Paste this into Codex or Claude to edit your website:
+
+```text
+I want to edit my website visually.
+Add the edit widget from https://github.com/janpmz/in-app-editor so I can edit the page in place.
+Read and follow instructions.md in that repo.
+```
+
+---
+
+## Use the editor
+
+Add an EDIT button to a website. Edit a separate copy of the page. The source page stays unchanged. All items get canvas coordinates when edit mode starts.
 
 The editor runs in the browser. It needs no separate server. Your site keeps its current setup.
 
