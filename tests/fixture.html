@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Editor checks</title></head>
+<body>
+  <main id="fixture">
+    <h1 id="headline">Hello world</h1>
+    <p id="copy">A short line of text.</p>
+    <p id="mixed">Keep <strong id="bold">these words</strong> intact.</p>
+    <button id="button" style="width:120px;height:40px" onclick="window.clicks=(window.clicks||0)+1">Click me</button>
+    <a id="link" href="#destination">A link</a>
+    <img id="image" alt="Old description" width="20" height="20">
+    <div id="container" style="padding:20px"><span id="inline">Inline words</span></div>
+    <form id="form" onsubmit="event.preventDefault();window.submits=(window.submits||0)+1"><input aria-label="Test input"><button id="submit">Send</button></form>
+    <div><p class="same">First</p><p class="same">Second</p></div>
+  </main>
+  <script src="../in-app-editor.js" data-auto="false"></script>
+</body>
+</html>
