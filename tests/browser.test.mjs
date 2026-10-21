@@ -220,6 +220,50 @@ test('browser checks', { timeout: 60000 }, async (t) => {
     await run('editor.undo()'); assert.deepEqual(await run('box(copy("#headline"))'), before);
     await run('editor.redo()'); assert.deepEqual(await run('box(copy("#headline"))'), after);
   });
+  await t.test('move a selected card from its handle without changing the mode', async () => {
+    await layout(); await run('editor.open();editor.select(document.querySelector("#card"))');
+    const source = await run('document.body.innerHTML');
+    const before = await run('box(copy("#card"))'), child = await run('box(copy("#square"))');
+    const grip = await run('box(document.querySelector("in-app-editor").shadowRoot.querySelector("[data-move-handle]"))');
+    assert.ok(grip.y + grip.height < before.y);
+    await drag(await handle('[data-move-handle]'), 60, 45);
+    const after = await run('box(copy("#card"))');
+    assert.equal(after.x, before.x + 60); assert.equal(after.y, before.y + 45);
+    assert.deepEqual(await run('box(copy("#square"))'), child);
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-panel] [data-mode=select]").getAttribute("aria-pressed")'), 'true');
+    await run('editor.undo()'); assert.deepEqual(await run('box(copy("#card"))'), before);
+    await run('editor.redo()'); assert.deepEqual(await run('box(copy("#card"))'), after);
+    await uiClick('[data-mode="pan"]');
+    await drag(await handle('[data-move-handle]'), 20, 10);
+    assert.equal((await run('box(copy("#card"))')).x, after.x + 20);
+    assert.deepEqual(await run('box(copy("#square"))'), child);
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-panel] [data-mode=pan]").getAttribute("aria-pressed")'), 'true');
+    assert.equal(await run('document.body.innerHTML'), source);
+  });
+  await t.test('move the whole group from its handle at reduced zoom', async () => {
+    await layout(); await run('editor.open()'); await click('#square'); await addToSelection('#row-label');
+    await context('#square'); await action('group');
+    await send('Input.dispatchMouseEvent', {type:'mouseWheel',x:400,y:150,deltaX:0,deltaY:Math.log(2)/.002,modifiers:4});
+    await sleep(50);
+    const before = await run('["#square","#row-label"].map(id=>box(copy(id)))'), card = await run('box(copy("#card"))');
+    await drag(await handle('[data-move-handle]'), 0, 0);
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-element]").textContent'), '2 items');
+    await drag(await handle('[data-move-handle]'), 40, 30);
+    const after = await run('["#square","#row-label"].map(id=>box(copy(id)))');
+    for (let i = 0; i < before.length; i++) {
+      assert.equal(after[i].x, before[i].x + 40); assert.equal(after[i].y, before[i].y + 30);
+      assert.equal(after[i].width, before[i].width); assert.equal(after[i].height, before[i].height);
+    }
+    assert.deepEqual(await run('box(copy("#card"))'), card);
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-panel] [data-mode=select]").getAttribute("aria-pressed")'), 'true');
+    for (const [action, expected] of [['undo', before], ['redo', after]]) {
+      await run('editor.' + action + '()');
+      const restored = await run('["#square","#row-label"].map(id=>box(copy(id)))');
+      for (let i = 0; i < expected.length; i++) for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(restored[i][key] - expected[i][key]) < .02);
+    }
+    await key('Delete');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-selection]").hidden'), true);
+  });
   await t.test('scale the item and its text from the corner', async () => {
     await fresh(); await click('#button');
     const before = await run('box(copy("#button"))');

@@ -24,7 +24,7 @@ The editor runs in the browser. It needs no separate server. Your site keeps its
 2. Click an item.
 3. Drag the item to move it. Drag the bottom-right handle to scale it. Drag a side handle to resize it.
 
-Edit mode opens at 80%. Double-click text to type.
+Edit mode opens at 80%. Double-click text to type. Drag the handle above a selection to move it in any mode.
 
 Click **−** in the sidebar header to hide the bar. Click **Edit** to bring it back.
 
