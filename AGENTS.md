@@ -26,3 +26,4 @@ Use the ASD-STE100 guide at `~/.claude/skills/asd-ste100/SKILL.md` when availabl
 - Keep the add tools in a separate left sidebar. Use the same tools and icons as the UI design editor.
 - Keep text in place when fitting its box to content.
 - Include new items in undo, redo, saved drafts, and exports.
+- Copied instructions must use canvas edits as the visual target. Change the real layout rather than copying canvas coordinates literally.

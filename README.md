@@ -47,9 +47,11 @@ Options: `open`, `persist`, `storageKey`, `initialZoom`, and `onChange(changes)`
 
 ## Save
 
-**Copy changes** copies a prompt for Codex. Paste it into the website project to apply the edits to its files.
+**copy change instructions** copies a prompt for Codex. Paste it into the website project to apply the edits to its files.
 
-**Export** saves a JSON file. **Reset** asks twice before it removes the edits and copies the current page again.
+The prompt treats canvas coordinates as the visual target. It asks Codex to match the edits through the real page layout. It also asks for checks on wide and narrow screens.
+
+**Reset** asks twice before it removes the edits and copies the current page again.
 
 New items appear in the saved changes with their type, HTML, and position. Undo, redo, groups, and delete also work on new items.
 
