@@ -12,6 +12,8 @@ Add the edit widget from https://github.com/janpmz/in-app-editor so I can edit t
 Read and follow instructions.md in that repo.
 ```
 
+![In-App Editor](./assets/editor.png)
+
 https://github.com/user-attachments/assets/706bbb14-9efd-4a21-b373-95e8f0a8204d
 
 ---
