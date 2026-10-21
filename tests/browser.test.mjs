@@ -449,6 +449,31 @@ test('browser checks', { timeout: 60000 }, async (t) => {
     assert.ok(Math.abs((await run('box(copy("#square"))')).width-square.width*2)<.1);
     await run('editor.undo();editor.undo()'); assert.deepEqual(await run('box(copy("#square"))'),square);
   });
+  await t.test('group and ungroup beside the move handle with immediate hover labels', async () => {
+    await layout(); await run('editor.open()'); await click('#square');
+    const tool = '[data-selection-tools] ', group = tool + '[data-action="group"]', ungroup = tool + '[data-action="ungroup"]';
+    const hidden = (selector) => run('document.querySelector("in-app-editor").shadowRoot.querySelector(' + JSON.stringify(selector) + ').hidden');
+    assert.equal(await hidden(group), true); assert.equal(await hidden(ungroup), true);
+    await addToSelection('#row-label');
+    assert.equal(await hidden(group), false); assert.equal(await hidden(ungroup), true);
+    const move = await handle('[data-move-handle]'), point = await handle(group);
+    assert.ok(point.x > move.x); assert.equal(point.y, move.y);
+    await send('Input.dispatchMouseEvent', {type:'mouseMoved', ...point});
+    const tip = await run('(()=>{const el=document.querySelector("in-app-editor").shadowRoot.querySelector(' + JSON.stringify(group) + '),css=getComputedStyle(el,"::after");return {text:css.content,visible:css.visibility,delay:css.transitionDelay}})()');
+    assert.equal(tip.text, '"Group"'); assert.equal(tip.visible, 'visible'); assert.equal(tip.delay, '0s');
+    await drag(point, 0, 0);
+    assert.equal(await hidden(group), true); assert.equal(await hidden(ungroup), false);
+    const groups = await run('editor.getChanges().map(item=>item.group)');
+    assert.equal(groups.length, 2); assert.ok(groups[0]); assert.equal(groups[0], groups[1]);
+    await uiClick('[data-action="minimize"]');
+    await drag(await handle(ungroup), 0, 0);
+    assert.equal(await hidden(group), false); assert.equal(await hidden(ungroup), true);
+    assert.ok((await run('editor.getChanges().map(item=>item.group)')).every(group=>group===null));
+    await run('editor.undo()');
+    assert.equal(await hidden(group), true); assert.equal(await hidden(ungroup), false);
+    await addToSelection('#crop');
+    assert.equal(await hidden(group), false); assert.equal(await hidden(ungroup), false);
+  });
   await t.test('group, ungroup, and delete with the page menu', async () => {
     await layout(); await run('editor.open()'); await click('#square'); await addToSelection('#row-label');
     const square = await run('box(copy("#square"))'), label = await run('box(copy("#row-label"))');
