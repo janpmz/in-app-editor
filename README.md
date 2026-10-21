@@ -14,6 +14,8 @@ Open [localhost:4317](http://localhost:4317).
 
 Edit mode opens at 80%. Double-click text to type.
 
+Click **−** in the sidebar header to hide the bar. Click **Edit** to bring it back.
+
 The sidebar has color pickers, opacity sliders, size sliders, plus/minus buttons, and font lists. Color comes first, then text, Border, and Font. Position and box size appear last. The color fields also accept pasted values.
 
 Hold **⌘/Ctrl** and scroll to zoom. Scroll to pan. Use **Select** to draw a selection box. The box only needs to touch an item. A box inside a card skips that card. Cross its edge to select it too.
