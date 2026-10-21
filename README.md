@@ -2,11 +2,9 @@
 
 Add an EDIT button to a website. Edit a separate copy of the page. The source page stays unchanged. All items get canvas coordinates when edit mode starts.
 
-```sh
-npm start
-```
+Paste the [setup prompt](./PROMPT.md) into Codex in your website project. Codex adds the editor to that site.
 
-Open [localhost:4317](http://localhost:4317).
+The editor runs in the browser. It needs no separate server. Your site keeps its current setup.
 
 1. Click **EDIT**.
 2. Click an item.
@@ -103,6 +101,16 @@ InAppEditor.destroy();
 ```
 
 `select()` accepts a source element. The editor changes its copy.
+
+## Demo
+
+To try the demo in this repo:
+
+```sh
+npm start
+```
+
+Open [localhost:4317](http://localhost:4317). This command starts a local server for the demo only.
 
 ## Checks
 
