@@ -15,7 +15,7 @@ export function createServer() {
       if (pathname.endsWith('/')) pathname += 'index.html';
       const filename = path.resolve(root, '.' + pathname);
       const relative = path.relative(root, filename);
-      if (relative.startsWith('..') || relative.split(path.sep).some((part) => part.startsWith('.')) || !['demo', 'tests', 'in-app-editor.js', 'index.js', 'README.md', 'PROMPT.md'].includes(relative.split(path.sep)[0])) {
+      if (relative.startsWith('..') || relative.split(path.sep).some((part) => part.startsWith('.')) || !['demo', 'tests', 'in-app-editor.js', 'index.js', 'README.md', 'PROMPT.md', 'instructions.md'].includes(relative.split(path.sep)[0])) {
         response.writeHead(403).end('Not served');
         return;
       }

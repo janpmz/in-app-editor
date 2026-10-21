@@ -28,13 +28,15 @@ Click **Add** beside the zoom controls to open the left sidebar. Add text, icons
 
 ## Add to a site
 
+Follow [instructions.md](./instructions.md) for setup.
+
 Copy `in-app-editor.js` into the public folder. Load it once:
 
 ```html
 <script src="/in-app-editor.js" defer></script>
 ```
 
-For an app with imports, copy this folder. Call `mountEditor()` in the browser after the app mounts:
+For an app with imports, copy `index.js` and `in-app-editor.js` into one folder. Call `mountEditor()` in the browser after the app mounts:
 
 ```js
 import { mountEditor } from './in-app-editor/index.js';

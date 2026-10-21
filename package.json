@@ -13,6 +13,7 @@
     "in-app-editor.js",
     "README.md",
     "PROMPT.md",
+    "instructions.md",
     "LICENSE"
   ],
   "scripts": {
