@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Canvas checks</title>
+<style>
+  *{box-sizing:border-box}body{margin:0;background:#f4f4f5;color:#18181b;font:15px/1.5 Arial,sans-serif}
+  header{display:flex;align-items:center;gap:12px;padding:20px 28px;background:#fff;border-bottom:1px solid #ddd}
+  header svg{width:24px;height:24px}main{padding:28px;display:grid;grid-template-columns:260px 260px;gap:24px}
+  article{padding:20px;border:1px solid #d4d4d8;border-radius:12px;background:#fff;box-shadow:0 4px 12px #0001}
+  h1{font-size:24px;line-height:1.3;margin:0 0 12px}p{margin:0 0 16px}button{font:600 13px Arial;padding:8px 14px;border:1px solid #18181b;border-radius:6px;background:#18181b;color:#fff}
+  .crop{position:relative;width:216px;height:70px;overflow:hidden;background:#e4e4e7;border:2px solid #a1a1aa;border-radius:8px}
+  .crop p{position:absolute;left:24px;top:38px;width:240px;font-size:24px;white-space:nowrap}
+  .row{display:flex;gap:14px;align-items:center;margin-top:16px}.square{width:32px;height:32px;border-radius:5px;background:#71717a}
+  .turn{transform:rotate(6deg);transform-origin:center;background:#e4e4e7;padding:16px;border-radius:8px;width:190px;margin-top:20px}
+</style></head>
+<body>
+  <header id="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>Canvas test</header>
+  <main id="layout">
+    <article id="card"><h1 id="rich-title">Text with <span id="inline-group"><em id="emphasis">style</em></span>.</h1><p id="wrapped">A line of text that wraps across several lines at this width.</p><button id="nested-button"><span id="button-label">Button</span></button><div class="row" id="row"><div class="square" id="square"></div><span id="row-label">Label</span></div></article>
+    <article id="other-card"><div class="crop" id="crop"><p id="cropped-text">Clipped text content</p></div><div class="turn" id="turned"><p id="turned-text">Rotated text</p></div><p id="mixed-container">Direct words <strong>and bold words</strong> after them.</p></article>
+  </main>
+  <script src="../in-app-editor.js" data-auto="false"></script>
+</body>
+</html>

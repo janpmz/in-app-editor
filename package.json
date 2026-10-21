@@ -1,6 +1,6 @@
 {
   "name": "@janpmz/in-app-editor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Edit a copy of a website.",
   "type": "module",
   "main": "index.js",

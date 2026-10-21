@@ -1,6 +1,6 @@
 # In-App Editor
 
-Add an EDIT button to a website. Edit a separate copy of the page. The source page stays unchanged.
+Add an EDIT button to a website. Edit a separate copy of the page. The source page stays unchanged. All items get canvas coordinates when edit mode starts.
 
 ```sh
 npm start
@@ -12,7 +12,7 @@ Open [localhost:4317](http://localhost:4317).
 2. Click an item.
 3. Drag the item to move it. Drag the bottom-right handle to scale it. Drag a side handle to resize it.
 
-Double-click text to type. Use the fields for fonts, colors, borders, and spacing. Use **Esc** to exit.
+Double-click text to type. The sidebar shows text, font size, weight, and colors first. Position and box size appear last. Use **Esc** to exit.
 
 ## Add to a site
 
@@ -39,7 +39,7 @@ Options: `open`, `persist`, `storageKey`, and `onChange(changes)`. Set `persist:
 
 **Export** saves a JSON file. Browser storage keeps drafts for each page path. Reset removes the current draft. Undo restores it.
 
-The copy captures the page when edit mode starts. It does not run the page’s scripts. Exit edit mode to use the source page.
+The canvas captures the page when edit mode starts. Text, images, controls, and groups become items. Changing a group’s width does not move its children. The canvas does not run the page’s scripts. Exit edit mode to use the source page.
 
 The editor cannot copy content inside closed shadow roots or frames. Video, custom components, and complex transforms can differ in the copy.
 

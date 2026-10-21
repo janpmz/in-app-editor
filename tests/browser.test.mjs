@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
 import { createServer } from '../server.mjs';
+import { comparePNG } from './pixels.mjs';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -83,6 +84,86 @@ test('browser checks', { timeout: 60000 }, async (t) => {
     return run(`(()=>{const r=document.querySelector('in-app-editor').shadowRoot.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
   }
   async function sameSource() { assert.equal(await run('document.querySelector("#fixture").outerHTML'), await run('sourceHTML')); }
+  async function layout() {
+    await send('Page.navigate', { url: base + '/tests/layout.html' });
+    for (let n=0;n<100;n++) { if (await run('document.readyState === "complete" && Boolean(window.InAppEditor)')) break; await sleep(20); }
+    await run('window.editor=InAppEditor;editor.mount({persist:false});window.copy=(selector)=>document.querySelector("in-app-editor").shadowRoot.querySelector("[data-page-copy]").shadowRoot.querySelector(selector);window.box=(el)=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}');
+  }
+  await t.test('create all items before selection without placeholders', async () => {
+    await fresh();
+    const before = await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-page-copy]").shadowRoot.querySelectorAll("[data-iae-layer]").length');
+    assert.ok(before > 15);
+    assert.equal(await run('Boolean(copy("#headline").parentElement.hasAttribute("data-iae-layer"))'), true);
+    assert.equal(await run('Boolean(copy("#copy").parentElement.hasAttribute("data-iae-layer"))'), true);
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-page-copy]").shadowRoot.querySelectorAll("[data-iae-placeholder]").length'), 0);
+    await run('editor.select(document.querySelector("#headline"))');
+    assert.equal(await run('document.querySelector("in-app-editor").shadowRoot.querySelector("[data-page-copy]").shadowRoot.querySelectorAll("[data-iae-layer]").length'), before);
+    assert.equal(await run('editor.getChanges().length'), 0);
+  });
+  await t.test('put text and colors first and geometry last', async () => {
+    await fresh(); await run('editor.select(document.querySelector("#headline"))');
+    const order = await run('Array.from(document.querySelector("in-app-editor").shadowRoot.querySelector("[data-fields]").querySelectorAll("textarea,input,select")).map(el=>el.hasAttribute("data-text")?"text":el.dataset.style||el.dataset.frame||el.name)');
+    assert.deepEqual(order.slice(0,5), ['text','font-size','font-weight','color','background-color']);
+    assert.deepEqual(order.slice(-5), ['x','y','scale','width','height']);
+  });
+  await t.test('preserve the starting view within text raster rounding', async () => {
+    await fresh('{persist:false}');
+    const before = await send('Page.captureScreenshot', {format:'png',clip:{x:0,y:0,width:460,height:350,scale:1}});
+    await run('editor.open()');
+    const after = await send('Page.captureScreenshot', {format:'png',clip:{x:0,y:0,width:460,height:350,scale:1}});
+    await mkdir(new URL('../test-results/',import.meta.url),{recursive:true});
+    await writeFile(new URL('../test-results/simple-before.png',import.meta.url),Buffer.from(before.data,'base64'));
+    await writeFile(new URL('../test-results/simple-after.png',import.meta.url),Buffer.from(after.data,'base64'));
+    const pixels = comparePNG(before.data, after.data);
+    assert.ok(pixels.ratio < .0015, JSON.stringify(pixels));
+  });
+  await t.test('preserve flex, grid, clipping, and transformed item bounds', async () => {
+    await layout();
+    const ids = ['#brand','#layout','#card','#rich-title','#inline-group','#emphasis','#wrapped','#nested-button','#row','#square','#row-label','#crop','#cropped-text','#turned','#turned-text'];
+    const before = await run('('+JSON.stringify(ids)+').map(id=>box(document.querySelector(id)))');
+    await run('editor.open()');
+    const after = await run('('+JSON.stringify(ids)+').map(id=>box(copy(id)))');
+    for (let index=0;index<ids.length;index++) for (const key of ['x','y','width','height']) assert.ok(Math.abs(before[index][key]-after[index][key])<.1,ids[index]+' '+key+': '+JSON.stringify({before:before[index],after:after[index]}));
+    assert.equal(await run('getComputedStyle(copy("#layout")).display'), 'block');
+    assert.equal(await run('getComputedStyle(copy("#row")).display'), 'block');
+    assert.equal(await run('getComputedStyle(copy("#crop")).overflow'), 'hidden');
+  });
+  await t.test('preserve text, backgrounds, and clipped content', async () => {
+    await layout();
+    const before = await send('Page.captureScreenshot', {format:'png',clip:{x:0,y:0,width:560,height:440,scale:1}});
+    await run('editor.open()');
+    const after = await send('Page.captureScreenshot', {format:'png',clip:{x:0,y:0,width:560,height:440,scale:1}});
+    await mkdir(new URL('../test-results/',import.meta.url),{recursive:true});
+    await writeFile(new URL('../test-results/layout-before.png',import.meta.url),Buffer.from(before.data,'base64'));
+    await writeFile(new URL('../test-results/layout-after.png',import.meta.url),Buffer.from(after.data,'base64'));
+    const pixels = comparePNG(before.data, after.data);
+    assert.ok(pixels.ratio < .0002, JSON.stringify(pixels));
+  });
+  await t.test('move and edit direct text as an item', async () => {
+    await layout(); await run('editor.open();editor.select(document.querySelector("#brand").childNodes[1]);editor.setText("Text item");editor.moveTo(100,100)');
+    const changes = JSON.parse(await run('editor.exportChanges("json")')).changes;
+    assert.equal(changes[0].selector, '#brand::text(1)');
+    assert.equal(changes[0].text.after, 'Text item');
+    assert.equal(changes[0].frame.x, 100); assert.equal(changes[0].frame.y, 100);
+    assert.equal(await run('document.querySelector("#brand").textContent'), 'Canvas test');
+    await run('editor.undo();editor.undo()');
+    assert.equal(await run('copy("#brand").textContent'), 'Canvas test');
+  });
+  await t.test('keep child positions when a group changes width', async () => {
+    await layout(); await run('editor.open();editor.select(document.querySelector("#row"))');
+    const before = await run('box(copy("#row-label"))');
+    await run('editor.setStyle("width","400px")');
+    assert.deepEqual(await run('box(copy("#row-label"))'), before);
+  });
+  await t.test('scale a group and its child items once', async () => {
+    await layout(); await run('editor.open();editor.select(document.querySelector("#row"))');
+    const before = await run('box(copy("#row"))'), square = await run('box(copy("#square"))');
+    await drag(await handle('[data-scale]'), before.width, before.height);
+    const after = await run('box(copy("#square"))');
+    assert.ok(Math.abs(after.width - square.width * 2)<.1); assert.ok(Math.abs(after.height - square.height * 2)<.1);
+    await run('editor.undo()'); assert.deepEqual(await run('box(copy("#square"))'),square);
+    await run('editor.redo()'); assert.ok(Math.abs((await run('box(copy("#square"))')).width-square.width*2)<.1);
+  });
 
   await t.test('show one instruction before selection', async () => {
     await fresh();
